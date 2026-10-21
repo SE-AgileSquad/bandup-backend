@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>BandUp.Api</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BandUp.Application\BandUp.Application.csproj" />
+    <ProjectReference Include="..\BandUp.Contracts\BandUp.Contracts.csproj" />
+    <ProjectReference Include="..\BandUp.Infrastructure\BandUp.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>BandUp.Infrastructure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BandUp.Application\BandUp.Application.csproj" />
+    <ProjectReference Include="..\BandUp.Contracts\BandUp.Contracts.csproj" />
+    <ProjectReference Include="..\BandUp.Domain\BandUp.Domain.csproj" />
+  </ItemGroup>
+
+</Project>
