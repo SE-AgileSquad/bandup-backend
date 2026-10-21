@@ -1,0 +1,76 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{cs,csx}]
+max_line_length = 120
+
+[*.{json,jsonc,yml,yaml,xml,props,targets,csproj,sln,http}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{sh,env,example}]
+indent_size = 2
+
+# ---------------------------------------------------------------------------
+# C# code style (binding rules: README 5.3 "Style")
+# ---------------------------------------------------------------------------
+
+[*.cs]
+csharp_style_namespace_declarations = file_scoped:error
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:silent
+csharp_style_var_elsewhere = false:suggestion
+csharp_prefer_braces = true:warning
+csharp_prefer_simple_using_statement = true:suggestion
+csharp_style_prefer_primary_constructors = false:silent
+csharp_style_unused_value_assignment_preference = discard_variable:suggestion
+csharp_using_directive_placement = outside_namespace:warning
+csharp_style_throw_expression = true:suggestion
+csharp_style_conditional_delegate_call = true:suggestion
+csharp_style_prefer_pattern_matching = true:suggestion
+
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
+dotnet_style_predefined_type_for_locals_parameters_members = true:warning
+dotnet_style_predefined_type_for_member_access = true:warning
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
+dotnet_style_readonly_field = true:warning
+dotnet_style_object_initializer = true:suggestion
+dotnet_style_collection_initializer = true:suggestion
+dotnet_style_coalesce_expression = true:suggestion
+dotnet_style_null_propagation = true:suggestion
+dotnet_style_explicit_tuple_names = true:suggestion
+dotnet_style_namespace_match_folder = true:suggestion
+
+# Dead members and pointless assignments fail the build (warnings as errors).
+# IDE0005 is deliberately not enforced: it needs GenerateDocumentationFile, which
+# would turn on CS1591 for every public member.
+dotnet_diagnostic.IDE0051.severity = warning
+dotnet_diagnostic.IDE0052.severity = warning
+dotnet_diagnostic.IDE0059.severity = warning
+
+# IDE0060 must stay off: the style rule requires a CancellationToken on every
+# async method, so unused-token parameters are normal and not a defect.
+dotnet_diagnostic.IDE0060.severity = none
+
+# Test projects use method names that mirror scenario IDs, not the async suffix.
+[tests/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none
+
+# Generated migration code is not held to the style rules.
+[**/Persistence/Migrations/*.cs]
+dotnet_diagnostic.IDE0005.severity = none
+dotnet_diagnostic.IDE0161.severity = none
+csharp_style_namespace_declarations = file_scoped:suggestion
+generated_code = true
