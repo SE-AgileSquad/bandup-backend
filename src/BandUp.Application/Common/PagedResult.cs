@@ -6,7 +6,7 @@ public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSi
         new(
             items,
             Math.Max(page, 1),
-            Math.Clamp(pageSize, 1, Paging.MaxPageSize),
+            Math.Clamp(pageSize, 1, PageRequest.MaxPageSize),
             Math.Max(totalCount, 0));
 
     public static PagedResult<T> Create(IReadOnlyList<T> items, PageRequest request, int totalCount) =>
