@@ -5,7 +5,7 @@ using RabbitMQ.Client;
 namespace BandUp.Infrastructure.Messaging;
 
 public sealed class RabbitMqPublisher(RabbitMqConnectionProvider connections, MessageRoutes routes)
-    : IMessagePublisher, IAsyncDisposable
+    : IDirectMessagePublisher, IAsyncDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IChannel? _channel;
@@ -30,7 +30,7 @@ public sealed class RabbitMqPublisher(RabbitMqConnectionProvider connections, Me
             },
         };
 
-        byte[] body = JsonSerializer.SerializeToUtf8Bytes(message);
+        byte[] body = JsonSerializer.SerializeToUtf8Bytes(message, JsonSerialization.Options);
 
         await channel.BasicPublishAsync(
             RabbitMqTopology.ExchangeName,

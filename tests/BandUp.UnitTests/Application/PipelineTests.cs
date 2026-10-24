@@ -2,6 +2,7 @@ using BandUp.Application;
 using BandUp.Application.Abstractions;
 using BandUp.Application.Behaviors;
 using BandUp.Application.Common;
+using BandUp.Infrastructure.Messaging;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -75,7 +76,8 @@ public sealed class PipelineTests
     public async Task INF_09_Transaction_Commits_On_Success()
     {
         IUnitOfWork unitOfWork = Substitute.For<IUnitOfWork>();
-        TransactionBehavior<TestCommand, string> behavior = new(unitOfWork);
+        MessageBuffer buffer = new();
+        TransactionBehavior<TestCommand, string> behavior = new(unitOfWork, buffer);
 
         Result<string> result = await behavior.HandleAsync(
             new TestCommand("hi"),
@@ -92,13 +94,15 @@ public sealed class PipelineTests
         });
 
         await unitOfWork.DidNotReceive().RollbackTransactionAsync(Arg.Any<CancellationToken>());
+        buffer.IsOpen.ShouldBeFalse();
     }
 
     [Fact]
     public async Task INF_09_Transaction_Rolls_Back_On_Failure_Result()
     {
         IUnitOfWork unitOfWork = Substitute.For<IUnitOfWork>();
-        TransactionBehavior<TestCommand, string> behavior = new(unitOfWork);
+        MessageBuffer buffer = new();
+        TransactionBehavior<TestCommand, string> behavior = new(unitOfWork, buffer);
 
         Result<string> result = await behavior.HandleAsync(
             new TestCommand("hi"),
@@ -110,13 +114,15 @@ public sealed class PipelineTests
         await unitOfWork.Received(1).RollbackTransactionAsync(Arg.Any<CancellationToken>());
         await unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
         await unitOfWork.DidNotReceive().CommitTransactionAsync(Arg.Any<CancellationToken>());
+        buffer.IsOpen.ShouldBeFalse();
     }
 
     [Fact]
     public async Task INF_09_Transaction_Rolls_Back_On_Exception()
     {
         IUnitOfWork unitOfWork = Substitute.For<IUnitOfWork>();
-        TransactionBehavior<TestCommand, string> behavior = new(unitOfWork);
+        MessageBuffer buffer = new();
+        TransactionBehavior<TestCommand, string> behavior = new(unitOfWork, buffer);
         RequestHandlerDelegate<string> next = () => throw new InvalidOperationException("boom");
 
         await Should.ThrowAsync<InvalidOperationException>(() =>
@@ -124,6 +130,77 @@ public sealed class PipelineTests
 
         await unitOfWork.Received(1).RollbackTransactionAsync(Arg.Any<CancellationToken>());
         await unitOfWork.DidNotReceive().CommitTransactionAsync(Arg.Any<CancellationToken>());
+        buffer.IsOpen.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Messages_Published_In_A_Transaction_Are_Released_After_The_Commit()
+    {
+        List<string> order = [];
+        IUnitOfWork unitOfWork = Substitute.For<IUnitOfWork>();
+
+        unitOfWork
+            .CommitTransactionAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                order.Add("commit");
+                return Task.CompletedTask;
+            });
+
+        RecordingDirectPublisher inner = new(order);
+        MessageBuffer buffer = new();
+        BufferedMessagePublisher publisher = new(buffer, inner);
+        TransactionBehavior<TestCommand, string> behavior = new(unitOfWork, buffer);
+
+        Result<string> result = await behavior.HandleAsync(
+            new TestCommand("hi"),
+            CancellationToken.None,
+            async () =>
+            {
+                await publisher.PublishAsync("first", CancellationToken.None);
+                order.Add("published-by-handler");
+
+                return await Task.FromResult(Result<string>.Success("ok"));
+            });
+
+        result.IsSuccess.ShouldBeTrue();
+        order.ShouldBe(["published-by-handler", "commit", "first"]);
+    }
+
+    [Fact]
+    public async Task Messages_Published_In_A_Rolled_Back_Transaction_Are_Discarded()
+    {
+        List<string> order = [];
+        IUnitOfWork unitOfWork = Substitute.For<IUnitOfWork>();
+        RecordingDirectPublisher inner = new(order);
+        MessageBuffer buffer = new();
+        BufferedMessagePublisher publisher = new(buffer, inner);
+        TransactionBehavior<TestCommand, string> behavior = new(unitOfWork, buffer);
+
+        Result<string> result = await behavior.HandleAsync(
+            new TestCommand("hi"),
+            CancellationToken.None,
+            async () =>
+            {
+                await publisher.PublishAsync("never-sent", CancellationToken.None);
+                return await Task.FromResult(Result<string>.Failure(Error.Conflict("nope")));
+            });
+
+        result.IsFailure.ShouldBeTrue();
+        order.ShouldBe([]);
+    }
+
+    [Fact]
+    public async Task Messages_Published_Outside_A_Transaction_Go_Straight_To_The_Publisher()
+    {
+        List<string> order = [];
+        RecordingDirectPublisher inner = new(order);
+        MessageBuffer buffer = new();
+        BufferedMessagePublisher publisher = new(buffer, inner);
+
+        await publisher.PublishAsync("immediate", CancellationToken.None);
+
+        order.ShouldBe(["immediate"]);
     }
 
     [Fact]
@@ -179,6 +256,16 @@ public sealed class PipelineTests
         {
             order.Add("handler");
             return Task.FromResult(Result<string>.Success(command.Value));
+        }
+    }
+
+    private sealed class RecordingDirectPublisher(List<string> order) : IDirectMessagePublisher
+    {
+        public Task PublishAsync<TMessage>(TMessage message, CancellationToken cancellationToken)
+            where TMessage : class
+        {
+            order.Add(message as string ?? typeof(TMessage).Name);
+            return Task.CompletedTask;
         }
     }
 

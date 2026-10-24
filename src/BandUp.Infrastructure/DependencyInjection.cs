@@ -109,13 +109,15 @@ public static class DependencyInjection
             .ValidateOnStart();
 
         services.AddSingleton(MessageRoutes.CreateDefault());
+        services.AddScoped<IMessageBuffer, MessageBuffer>();
 
         string provider =
             configuration[$"{MessagePublisherSettings.SectionName}:Provider"] ?? ServiceProviders.RabbitMq;
 
         if (string.Equals(provider, ServiceProviders.InMemory, StringComparison.OrdinalIgnoreCase))
         {
-            services.AddSingleton<IMessagePublisher, InMemoryMessagePublisher>();
+            services.AddSingleton<IDirectMessagePublisher, InMemoryMessagePublisher>();
+            services.AddScoped<IMessagePublisher, BufferedMessagePublisher>();
             return services;
         }
 
@@ -138,7 +140,8 @@ public static class DependencyInjection
 
         services.AddSingleton<RabbitMqConnectionProvider>();
         services.AddSingleton<RabbitMqTopology>();
-        services.AddSingleton<IMessagePublisher, RabbitMqPublisher>();
+        services.AddSingleton<IDirectMessagePublisher, RabbitMqPublisher>();
+        services.AddScoped<IMessagePublisher, BufferedMessagePublisher>();
 
         return services;
     }

@@ -14,7 +14,7 @@ public sealed class RedisCacheService(IConnectionMultiplexer connection) : ICach
 
         return value.IsNullOrEmpty
             ? default
-            : JsonSerializer.Deserialize<TValue>(value.ToString());
+            : JsonSerializer.Deserialize<TValue>(value.ToString(), JsonSerialization.Options);
     }
 
     public async Task SetAsync<TValue>(
@@ -23,7 +23,7 @@ public sealed class RedisCacheService(IConnectionMultiplexer connection) : ICach
         TimeSpan? timeToLive,
         CancellationToken cancellationToken)
     {
-        string payload = JsonSerializer.Serialize(value);
+        string payload = JsonSerializer.Serialize(value, JsonSerialization.Options);
         IDatabase database = connection.GetDatabase();
 
         if (timeToLive is { } lifetime)

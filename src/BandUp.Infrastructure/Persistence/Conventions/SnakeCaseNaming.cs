@@ -40,10 +40,18 @@ public static class SnakeCaseNaming
             {
                 index.SetDatabaseName(ToSnakeCase(index.GetDatabaseName()!));
             }
+
+            foreach (IMutableCheckConstraint constraint in entityType.GetCheckConstraints())
+            {
+                if (constraint.Name is { } name)
+                {
+                    constraint.Name = ToSnakeCase(name);
+                }
+            }
         }
     }
 
-    internal static string ToSnakeCase(string name)
+    public static string ToSnakeCase(string name)
     {
         if (string.IsNullOrEmpty(name))
         {

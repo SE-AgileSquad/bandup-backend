@@ -6,7 +6,7 @@ namespace BandUp.Infrastructure.Messaging;
 /// <summary>
 /// Publisher used by tests and by local runs that select <c>MessagePublisher__Provider=InMemory</c>.
 /// </summary>
-public sealed class InMemoryMessagePublisher : IMessagePublisher
+public sealed class InMemoryMessagePublisher : IDirectMessagePublisher
 {
     private readonly ConcurrentQueue<object> _published = new();
 
