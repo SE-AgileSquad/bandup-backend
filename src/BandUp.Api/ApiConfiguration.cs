@@ -1,0 +1,150 @@
+using BandUp.Api.Errors;
+using BandUp.Api.Health;
+using BandUp.Api.Middleware;
+using BandUp.Infrastructure;
+using BandUp.Infrastructure.Configuration;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
+
+namespace BandUp.Api;
+
+/// <summary>
+/// Host-level wiring: the pieces that describe how this process is exposed rather than what
+/// it does. Kept out of <c>Program.cs</c> so the composition root stays readable.
+/// </summary>
+public static class ApiConfiguration
+{
+    public const string CorsPolicy = "frontend";
+
+    private static readonly string[] AllowedMethods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+
+    private static readonly string[] AllowedHeaders =
+    [
+        "Content-Type",
+        "Accept",
+        "Authorization",
+        "X-Request-Id",
+    ];
+
+    public static IServiceCollection AddApiConfiguration(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services
+            .AddOptions<CorsSettings>()
+            .BindConfiguration(CorsSettings.SectionName)
+            .Validate(
+                settings => Uri.TryCreate(settings.AllowedOrigin, UriKind.Absolute, out _),
+                $"{CorsSettings.SectionName}:AllowedOrigin must be an absolute URI.")
+            .ValidateOnStart();
+
+        services
+            .AddOptions<SwaggerSettings>()
+            .BindConfiguration(SwaggerSettings.SectionName)
+            .ValidateOnStart();
+
+        services
+            .AddOptions<ForwardedHeadersSettings>()
+            .BindConfiguration(ForwardedHeadersSettings.SectionName)
+            .ValidateOnStart();
+
+        services
+            .AddOptions<FeaturesSettings>()
+            .BindConfiguration(FeaturesSettings.SectionName)
+            .ValidateOnStart();
+
+        services
+            .AddOptions<SentrySettings>()
+            .BindConfiguration(SentrySettings.SectionName)
+            .ValidateOnStart();
+
+        services.AddCors(options => options.AddPolicy(CorsPolicy, policy =>
+        {
+            string? origin = configuration[$"{CorsSettings.SectionName}:AllowedOrigin"];
+
+            if (!string.IsNullOrWhiteSpace(origin))
+            {
+                policy
+                    .WithOrigins(origin)
+                    .AllowCredentials()
+                    .WithMethods(AllowedMethods)
+                    .WithHeaders(AllowedHeaders);
+            }
+        }));
+
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+            // The proxy is trusted by configuration alone: enabling the middleware is the
+            // explicit decision, so known networks must not be limited to loopback.
+            options.KnownIPNetworks.Clear();
+            options.KnownProxies.Clear();
+        });
+
+        services.AddEndpointsApiExplorer();
+        services.AddSwaggerGen(options => options.SwaggerDoc("v1", new OpenApiInfo
+        {
+            Title = "BandUp API",
+            Version = "v1",
+            Description = "IELTS Reading and Writing preparation platform.",
+        }));
+
+        services.AddProblemDetails();
+        services.AddExceptionHandler<BandUpExceptionHandler>();
+
+        services
+            .AddHealthChecks()
+            .AddCheck<PostgresHealthCheck>(
+                HealthCheckNames.Postgres,
+                failureStatus: null,
+                tags: [HealthCheckNames.DependencyTag],
+                timeout: HealthCheckNames.Timeout)
+            .AddCheck<CacheHealthCheck>(
+                HealthCheckNames.Cache,
+                failureStatus: null,
+                tags: [HealthCheckNames.DependencyTag],
+                timeout: HealthCheckNames.Timeout)
+            .AddCheck<RabbitMqHealthCheck>(
+                HealthCheckNames.RabbitMq,
+                failureStatus: null,
+                tags: [HealthCheckNames.DependencyTag],
+                timeout: HealthCheckNames.Timeout)
+            .AddCheck<PendingMigrationsHealthCheck>(
+                HealthCheckNames.Migrations,
+                failureStatus: null,
+                tags: [HealthCheckNames.ReadyTag],
+                timeout: HealthCheckNames.Timeout);
+
+        return services;
+    }
+
+    public static WebApplication UseApiConfiguration(
+        this WebApplication app,
+        IConfiguration configuration)
+    {
+        IOptions<ForwardedHeadersSettings> forwarded =
+            app.Services.GetRequiredService<IOptions<ForwardedHeadersSettings>>();
+
+        if (forwarded.Value.Enabled)
+        {
+            app.UseForwardedHeaders();
+        }
+
+        app.UseExceptionHandler();
+        app.UseMiddleware<RequestIdMiddleware>();
+        app.UseMiddleware<RequestLoggingMiddleware>();
+        app.UseCors(CorsPolicy);
+
+        IOptions<SwaggerSettings> swagger = app.Services.GetRequiredService<IOptions<SwaggerSettings>>();
+
+        if (swagger.Value.Enabled)
+        {
+            app.UseSwagger();
+            app.UseSwaggerUI(options => options.RoutePrefix = "swagger");
+        }
+
+        return app;
+    }
+}

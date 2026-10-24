@@ -2,7 +2,14 @@
 
   <PropertyGroup>
     <RootNamespace>BandUp.Api</RootNamespace>
+    <UserSecretsId>bandup-api</UserSecretsId>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Sentry.AspNetCore" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\BandUp.Application\BandUp.Application.csproj" />
