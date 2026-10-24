@@ -99,6 +99,27 @@ public abstract class RabbitMqConsumerBase<TMessage>(
         BasicDeliverEventArgs args,
         CancellationToken cancellationToken)
     {
+        try
+        {
+            await ProcessAsync(channel, args, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Shutting down mid-delivery. The message is deliberately left unacknowledged so
+            // the broker redelivers it once this process is gone, and the exception is not
+            // allowed to escape: that would fault the channel on the way out.
+            logger.LogInformation(
+                "Shutdown during delivery {DeliveryTag} on {QueueName}; leaving it unacknowledged",
+                args.DeliveryTag,
+                QueueName);
+        }
+    }
+
+    private async Task ProcessAsync(
+        IChannel channel,
+        BasicDeliverEventArgs args,
+        CancellationToken cancellationToken)
+    {
         TMessage? message = Deserialize(args);
 
         if (message is null)

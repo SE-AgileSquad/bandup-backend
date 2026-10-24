@@ -11,6 +11,8 @@ public sealed class RabbitMqTopology(MessageRoutes routes)
     public const string ExchangeName = "bandup.jobs";
     public const string ExchangeType = "direct";
 
+    public int QueueCount => routes.Queues.Count;
+
     public async Task DeclareAsync(IConnection connection, CancellationToken cancellationToken)
     {
         IChannel channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);

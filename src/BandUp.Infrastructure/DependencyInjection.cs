@@ -143,6 +143,9 @@ public static class DependencyInjection
         services.AddSingleton<IDirectMessagePublisher, RabbitMqPublisher>();
         services.AddScoped<IMessagePublisher, BufferedMessagePublisher>();
 
+        // Registered first so the exchange exists before any consumer starts reading.
+        services.AddHostedService<RabbitMqTopologyInitializer>();
+
         return services;
     }
 }
