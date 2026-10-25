@@ -24,9 +24,15 @@ on top of it in later stages.
 
 Tests live in `tests/`: unit, architecture, and integration (Testcontainers).
 
-Start with **[docs/architecture/patterns.md](docs/architecture/patterns.md)** to see how a
-feature is written, and **[docs/implementation-status.md](docs/implementation-status.md)** for
-what is built so far.
+## Where to read next
+
+| Document | Read it when |
+|---|---|
+| [docs/architecture/backend-architecture.md](docs/architecture/backend-architecture.md) | you want the whole system on one page — the six projects, a request end to end, the contracts |
+| [docs/how-to-add-a-feature.md](docs/how-to-add-a-feature.md) | you are about to write a feature |
+| [docs/architecture/patterns.md](docs/architecture/patterns.md) | you want to know why a pattern is there, or when not to use it |
+| [docs/adr/](docs/adr/) | you want the reasoning behind a decision |
+| [docs/implementation-status.md](docs/implementation-status.md) | you want to know what is built and what is not |
 
 ## Prerequisites
 
@@ -164,12 +170,19 @@ Listens on `http://localhost:8080`.
 | `/health` | Detailed status of PostgreSQL, Redis and RabbitMQ. |
 | `/swagger` | Swagger UI, in Development. |
 | `/api/_debug/throw` | Deliberate failure, to exercise the error format. Diagnostics only. |
-| `/api/system/time` | **Not built yet** — arrives with the reference slice. |
-| `/api/system/ping` | **Not built yet** — arrives with the reference slice. |
+| `/api/system/time` | Reference slice — server time, environment and version. Diagnostics only. |
+| `/api/system/ping` | Reference slice — publishes a job the Worker consumes. Diagnostics only. |
 
-The two `_debug` and `system` routes require `Features__Diagnostics=true` and are never mapped
-in Production. See [docs/implementation-status.md](docs/implementation-status.md) for what is
-built so far.
+The `_debug` and `system` routes require `Features__Diagnostics=true` and are never mapped in
+Production, even when the flag is set.
+
+A quick check that the API and the Worker are talking:
+
+```bash
+curl -X POST localhost:8080/api/system/ping -H 'Content-Type: application/json' -d '{"message":"hi"}'
+```
+
+The API returns `202` with a `pingId`, and the Worker logs `Received ping <pingId>`.
 
 ## Run the Worker
 
@@ -207,12 +220,14 @@ src/
   BandUp.Api/             Endpoints/<Module>/, Health/, Middleware/, Errors/
   BandUp.Worker/          Consumers/
 tests/
-  BandUp.UnitTests/       Application/, Logging/
+  BandUp.UnitTests/       Application/, Features/, Logging/
   BandUp.ArchitectureTests/
-  BandUp.IntegrationTests/
+  BandUp.IntegrationTests/  Infrastructure/ (fixtures), and one file per scenario group
 docs/
   adr/                    Architecture decision records
-  architecture/           Patterns guide, container view
+  architecture/           Whole-system view and patterns guide
+  how-to-add-a-feature.md Recipe for a new feature
+  implementation-status.md  What is built, and what is not
 infra/
   docker/                 Local dependency stack
   env/                    Environment file example

@@ -6,6 +6,10 @@ when **not** to use it.
 Each entry points at the `System` reference slice, which is the template to copy. The slice is
 `Application/Features/System/`, `Api/Endpoints/System/` and `Worker/Consumers/`.
 
+For the whole system on one page — the six projects, the runtime view, a request end to end —
+read [backend-architecture.md](backend-architecture.md). For the step-by-step recipe, read
+[how-to-add-a-feature.md](../how-to-add-a-feature.md).
+
 ---
 
 ## CQRS-lite with an in-house dispatcher
