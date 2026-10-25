@@ -1,6 +1,7 @@
 using BandUp.Application.Abstractions;
 using BandUp.Infrastructure.Caching;
 using BandUp.Infrastructure.Configuration;
+using BandUp.Infrastructure.Hosting;
 using BandUp.Infrastructure.Messaging;
 using BandUp.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,7 @@ public static class DependencyInjection
     {
         services.TryAddSingleton(configuration);
         services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IServerInfo, ServerInfo>();
 
         services.AddPersistence();
         services.AddCaching(configuration);

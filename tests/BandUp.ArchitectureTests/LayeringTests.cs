@@ -23,7 +23,7 @@ public sealed class LayeringTests
     {
         ["BandUp.Domain"] = [],
         ["BandUp.Contracts"] = [],
-        ["BandUp.Application"] = ["BandUp.Domain"],
+        ["BandUp.Application"] = ["BandUp.Contracts", "BandUp.Domain"],
         ["BandUp.Infrastructure"] = ["BandUp.Application", "BandUp.Contracts", "BandUp.Domain"],
         ["BandUp.Api"] = ["BandUp.Application", "BandUp.Contracts", "BandUp.Infrastructure"],
         ["BandUp.Worker"] = ["BandUp.Application", "BandUp.Contracts", "BandUp.Infrastructure"],
@@ -42,10 +42,12 @@ public sealed class LayeringTests
     }
 
     [Fact]
-    public void INF_08_Application_References_No_Project_Other_Than_Domain()
+    public void INF_08_Application_References_No_Project_Other_Than_Domain_And_Contracts()
     {
+        // Contracts depends on nothing, so this edge adds no cycle: a command handler needs to
+        // publish the message contract it produces. See ADR 0008.
         BandUpReferencesOf("BandUp.Application")
-            .Except(["BandUp.Domain"], StringComparer.Ordinal)
+            .Except(["BandUp.Contracts", "BandUp.Domain"], StringComparer.Ordinal)
             .ShouldBeEmpty();
     }
 

@@ -1,3 +1,5 @@
+using BandUp.Contracts.Messages;
+
 namespace BandUp.Infrastructure.Messaging;
 
 /// <summary>
@@ -6,6 +8,8 @@ namespace BandUp.Infrastructure.Messaging;
 /// </summary>
 public sealed class MessageRoutes
 {
+    public const string PingQueue = "system.ping";
+
     private readonly Dictionary<Type, string> _routes = [];
 
     public IReadOnlyCollection<string> Queues => _routes.Values.Distinct(StringComparer.Ordinal).ToArray();
@@ -14,7 +18,8 @@ public sealed class MessageRoutes
     /// Every message route known to the system. Both the API and the Worker build the
     /// topology from this table, so a queue cannot exist in one process and not the other.
     /// </summary>
-    public static MessageRoutes CreateDefault() => new();
+    public static MessageRoutes CreateDefault() =>
+        new MessageRoutes().Map<PingRequested>(PingQueue);
 
     public MessageRoutes Map<TMessage>(string queue)
         where TMessage : class

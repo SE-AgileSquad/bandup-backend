@@ -9,10 +9,10 @@ namespace BandUp.Api.Errors;
 public static class ResultExtensions
 {
     public static IResult ToProblem(this Error error, HttpContext httpContext) =>
-        TypedResults.Problem(ProblemDetailsFactory.ForError(error, httpContext));
+        new ProblemResult(ProblemDetailsFactory.ForError(error, httpContext));
 
     public static IResult ToProblem<TValue>(this Result<TValue> result, HttpContext httpContext) =>
         result.Error is { } error
-            ? TypedResults.Problem(ProblemDetailsFactory.ForError(error, httpContext))
+            ? new ProblemResult(ProblemDetailsFactory.ForError(error, httpContext))
             : throw new InvalidOperationException("A successful result cannot be mapped to a problem response.");
 }

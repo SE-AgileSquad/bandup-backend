@@ -2,6 +2,7 @@ using BandUp.Application;
 using BandUp.Infrastructure;
 using BandUp.Infrastructure.Configuration;
 using BandUp.Infrastructure.Logging;
+using BandUp.Worker.Consumers;
 using Microsoft.Extensions.Hosting;
 using Sentry;
 using Serilog;
@@ -38,6 +39,8 @@ builder.Services.Configure<HostOptions>(options =>
 builder.Services
     .AddApplication()
     .AddInfrastructure(builder.Configuration);
+
+builder.Services.AddHostedService<PingConsumer>();
 
 IHost host = builder.Build();
 

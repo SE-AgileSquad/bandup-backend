@@ -11,6 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\BandUp.Contracts\BandUp.Contracts.csproj" />
     <ProjectReference Include="..\BandUp.Domain\BandUp.Domain.csproj" />
   </ItemGroup>
 
