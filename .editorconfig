@@ -68,6 +68,11 @@ dotnet_diagnostic.IDE0060.severity = none
 [tests/**/*.cs]
 dotnet_diagnostic.CA1707.severity = none
 
+# xUnit1051 asks every call that accepts a token to pass TestContext.Current.CancellationToken.
+# These tests drive an in-process TestServer and containers whose lifetime the fixture owns, so
+# threading the token through every HTTP call buys little. Kept as a suggestion, not an error.
+dotnet_diagnostic.xUnit1051.severity = suggestion
+
 # Generated migration code is not held to the style rules.
 [**/Persistence/Migrations/*.cs]
 dotnet_diagnostic.IDE0005.severity = none

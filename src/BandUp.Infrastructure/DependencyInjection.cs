@@ -89,7 +89,15 @@ public static class DependencyInjection
         services.AddSingleton<IConnectionMultiplexer>(providerServices =>
         {
             RedisSettings settings = providerServices.GetRequiredService<IOptions<RedisSettings>>().Value;
-            return ConnectionMultiplexer.Connect(settings.ConnectionString!);
+
+            ConfigurationOptions options = ConfigurationOptions.Parse(settings.ConnectionString!);
+
+            // The cache is an optimisation, not a source of truth. Without this the first
+            // resolution of ICacheService throws while a broker is down, which turns a
+            // dependency outage into a 500 instead of a health check that reports it.
+            options.AbortOnConnectFail = false;
+
+            return ConnectionMultiplexer.Connect(options);
         });
 
         services.AddSingleton<ICacheService, RedisCacheService>();

@@ -26,13 +26,25 @@ public static class BandUpLoggerConfiguration
         "Microsoft.EntityFrameworkCore.Model.Validation",
     ];
 
-    public static Logger Create(string serviceName, IConfiguration configuration)
+    /// <summary>
+    /// Builds the process logger. An extra sink receives the same events as the console sink,
+    /// which is how a test asserts on what was actually logged.
+    /// </summary>
+    public static Logger Create(
+        string serviceName,
+        IConfiguration configuration,
+        ILogEventSink? additionalSink = null)
     {
         LoggerConfiguration logger = new LoggerConfiguration()
             .MinimumLevel.Is(ParseLevel(configuration["Serilog:MinimumLevel"]))
             .Enrich.FromLogContext()
             .Enrich.WithProperty(BandUpLogProperties.Service, serviceName)
             .WriteTo.Console(new BandUpJsonFormatter());
+
+        if (additionalSink is not null)
+        {
+            logger = logger.WriteTo.Sink(additionalSink);
+        }
 
         foreach (string source in QuietedSources)
         {
