@@ -40,15 +40,16 @@ what is built so far.
 PostgreSQL (with pgvector and citext), Redis and RabbitMQ run in Docker. The API and the Worker
 run on the host, not in containers.
 
-> The compose file and the environment example referenced below are added by the infrastructure
-> checkpoint and are not in the repository yet. Everything after this section is already in
-> place.
-
 Create your local environment file from the example and fill in the placeholders:
 
 ```bash
 cp infra/env/dev.env.example infra/env/dev.env
 ```
+
+The stack publishes PostgreSQL on 5432, Redis on 6379, RabbitMQ on 5672 and its management UI
+on 15672. If any of those is already taken on your machine, set the matching `*_PORT` variable
+in `dev.env` instead of editing the compose file. See
+[Ports that cannot be bound](#ports-that-cannot-be-bound) below — on Windows this is common.
 
 Then start the stack and wait for every health check to pass:
 
@@ -73,11 +74,11 @@ docker compose --env-file infra/env/dev.env -f infra/docker/docker-compose.dev.y
 Passwords do not live in the repository. The API and the Worker each read them from .NET user
 secrets, which are stored outside the checkout.
 
-Run these from the repository root. Replace the placeholders with the same values you put in
-`infra/env/dev.env`.
+Run these from the repository root. The username and password must be the same values you put
+in `infra/env/dev.env`, and the port must match the one the stack is published on.
 
 ```bash
-dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=5432;Database=bandup;Username=postgres;Password=CHANGE_ME" --project src/BandUp.Api
+dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=5432;Database=bandup;Username=bandup;Password=CHANGE_ME" --project src/BandUp.Api
 ```
 
 ```bash
@@ -85,12 +86,53 @@ dotnet user-secrets set "RabbitMq:Password" "CHANGE_ME" --project src/BandUp.Api
 ```
 
 ```bash
-dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=5432;Database=bandup;Username=postgres;Password=CHANGE_ME" --project src/BandUp.Worker
+dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=5432;Database=bandup;Username=bandup;Password=CHANGE_ME" --project src/BandUp.Worker
 ```
 
 ```bash
 dotnet user-secrets set "RabbitMq:Password" "CHANGE_ME" --project src/BandUp.Worker
 ```
+
+If you moved a port, also override the matching setting — for both projects, because both
+connect to the same services:
+
+```bash
+dotnet user-secrets set "Redis:ConnectionString" "localhost:REDIS_PORT" --project src/BandUp.Api
+```
+
+```bash
+dotnet user-secrets set "RabbitMq:Port" "RABBITMQ_PORT" --project src/BandUp.Worker
+```
+
+## Ports that cannot be bound
+
+Windows reserves large blocks of TCP ports at boot for Hyper-V and WinNAT. A port inside one of
+those ranges cannot be published by Docker, and the failure is easy to misread as a Docker
+problem:
+
+```
+Error response from daemon: ports are not available: exposing port TCP 127.0.0.1:6379
+-> 127.0.0.1:0: listen tcp4 127.0.0.1:6379: bind: An attempt was made to access a socket
+in a way forbidden by its access permissions.
+```
+
+Check whether a port is affected:
+
+```bash
+netsh interface ipv4 show excludedportrange protocol=tcp
+```
+
+If it is, set the matching variable in `infra/env/dev.env` and use the same port in the user
+secrets above. The ranges shift after a reboot, so a port that works today may not tomorrow —
+picking one well outside the common ranges avoids the surprise.
+
+```bash
+REDIS_PORT=16379
+RABBITMQ_PORT=15673
+```
+
+The management UI stays on 15672 in that example, since it is rarely among the reserved ports.
+Nothing in the application hard-codes these ports; they come from configuration.
 
 Configuration is validated at startup, so a missing value stops the process with a message
 naming the key. It never surfaces later as a null reference.
