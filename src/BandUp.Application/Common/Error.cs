@@ -9,6 +9,12 @@ public sealed record Error(string Code, string Message, ErrorType Type)
     public const string UnauthorizedCode = "UNAUTHORIZED";
     public const string InternalErrorCode = "INTERNAL_ERROR";
 
+    public const string EmailTakenCode = "EMAIL_TAKEN";
+    public const string InvalidCredentialsCode = "INVALID_CREDENTIALS";
+    public const string InvalidRefreshTokenCode = "INVALID_REFRESH_TOKEN";
+    public const string CaptchaFailedCode = "CAPTCHA_FAILED";
+    public const string CaptchaUnavailableCode = "CAPTCHA_UNAVAILABLE";
+
     public IReadOnlyDictionary<string, string[]> ValidationErrors { get; init; } =
         new Dictionary<string, string[]>(StringComparer.Ordinal);
 
@@ -25,4 +31,23 @@ public sealed record Error(string Code, string Message, ErrorType Type)
     public static Error Forbidden(string message) => new(ForbiddenCode, message, ErrorType.Forbidden);
 
     public static Error Unauthorized(string message) => new(UnauthorizedCode, message, ErrorType.Unauthorized);
+
+    public static Error EmailTaken() =>
+        new(EmailTakenCode, "An account with this email already exists.", ErrorType.Conflict);
+
+    /// <summary>
+    /// One message for both an unknown email and a wrong password, so the response cannot be
+    /// used to discover which accounts exist.
+    /// </summary>
+    public static Error InvalidCredentials() =>
+        new(InvalidCredentialsCode, "The email or password is incorrect.", ErrorType.Unauthorized);
+
+    public static Error InvalidRefreshToken() =>
+        new(InvalidRefreshTokenCode, "The session has expired. Sign in again.", ErrorType.Unauthorized);
+
+    public static Error CaptchaFailed() =>
+        new(CaptchaFailedCode, "The CAPTCHA check failed. Try again.", ErrorType.Unprocessable);
+
+    public static Error CaptchaUnavailable() =>
+        new(CaptchaUnavailableCode, "The CAPTCHA service is unavailable. Try again later.", ErrorType.Unprocessable);
 }

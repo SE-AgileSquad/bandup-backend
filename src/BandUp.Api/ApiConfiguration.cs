@@ -1,8 +1,10 @@
+using BandUp.Api.Auth;
 using BandUp.Api.Errors;
 using BandUp.Api.Health;
 using BandUp.Api.Middleware;
 using BandUp.Infrastructure;
 using BandUp.Infrastructure.Configuration;
+using BandUp.Application.Abstractions;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
@@ -25,6 +27,7 @@ public static class ApiConfiguration
         "Accept",
         "Authorization",
         "X-Request-Id",
+        "X-Requested-With",
     ];
 
     public static IServiceCollection AddApiConfiguration(
@@ -58,6 +61,26 @@ public static class ApiConfiguration
             .AddOptions<SentrySettings>()
             .BindConfiguration(SentrySettings.SectionName)
             .ValidateOnStart();
+
+        services
+            .AddOptions<AuthSettings>()
+            .BindConfiguration(AuthSettings.SectionName)
+            .Validate(
+                settings => !string.IsNullOrWhiteSpace(settings.SigningKey),
+                $"{AuthSettings.SectionName}:SigningKey is required.")
+            .Validate(
+                settings => settings.SigningKey is { Length: >= 32 },
+                $"{AuthSettings.SectionName}:SigningKey must be at least 32 characters.")
+            .Validate(
+                settings => settings.AccessTokenMinutes is > 0 and <= 60,
+                $"{AuthSettings.SectionName}:AccessTokenMinutes must be between 1 and 60.")
+            .Validate(
+                settings => settings.RefreshTokenDays is > 0 and <= 90,
+                $"{AuthSettings.SectionName}:RefreshTokenDays must be between 1 and 90.")
+            .ValidateOnStart();
+
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentUser, CurrentUser>();
 
         services.AddCors(options => options.AddPolicy(CorsPolicy, policy =>
         {
@@ -136,6 +159,10 @@ public static class ApiConfiguration
         app.UseMiddleware<RequestIdMiddleware>();
         app.UseMiddleware<RequestLoggingMiddleware>();
         app.UseCors(CorsPolicy);
+
+        // After CORS so preflights are answered, before the endpoints so a rejected request
+        // never reaches a handler.
+        app.UseMiddleware<CsrfMiddleware>();
 
         IOptions<SwaggerSettings> swagger = app.Services.GetRequiredService<IOptions<SwaggerSettings>>();
 

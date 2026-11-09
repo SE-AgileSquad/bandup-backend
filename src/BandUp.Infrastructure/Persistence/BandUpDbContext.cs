@@ -1,3 +1,4 @@
+using BandUp.Domain.Identity;
 using BandUp.Infrastructure.Persistence.Conventions;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,6 +8,10 @@ public sealed class BandUpDbContext(DbContextOptions<BandUpDbContext> options) :
 {
     public const string MigrationsHistoryTable = "__EFMigrationsHistory";
     public const string MigrationsHistorySchema = "public";
+
+    public DbSet<User> Users => Set<User>();
+
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

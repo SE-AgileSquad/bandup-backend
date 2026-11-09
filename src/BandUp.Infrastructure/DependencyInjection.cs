@@ -1,8 +1,10 @@
 using BandUp.Application.Abstractions;
+using BandUp.Application.Features.Identity;
 using BandUp.Infrastructure.Caching;
 using BandUp.Infrastructure.Configuration;
 using BandUp.Infrastructure.Hosting;
 using BandUp.Infrastructure.Messaging;
+using BandUp.Infrastructure.Security;
 using BandUp.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -22,6 +24,10 @@ public static class DependencyInjection
         services.TryAddSingleton(configuration);
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IServerInfo, ServerInfo>();
+
+        // The default identity is anonymous. The API replaces this with an HttpContext-based
+        // implementation; the Worker keeps this one, because it has no request.
+        services.TryAddScoped<ICurrentUser, NullCurrentUser>();
 
         services.AddPersistence();
         services.AddCaching(configuration);
@@ -53,6 +59,9 @@ public static class DependencyInjection
 
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
+
+        services.AddScoped<IUserRepository, EfUserRepository>();
+        services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
 
         return services;
     }
