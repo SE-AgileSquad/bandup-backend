@@ -68,6 +68,10 @@ public sealed class BandUpTestEnvironment : IAsyncLifetime
         ["Swagger:Enabled"] = "true",
         ["Features:Diagnostics"] = "true",
         ["Sentry:Dsn"] = string.Empty,
+
+        // Not a secret: a fixed key so tests are reproducible and never read user secrets.
+        ["Auth:SigningKey"] = "integration-test-signing-key-not-for-any-real-use-0123456789",
+        ["Auth:RequireSecureCookies"] = "false",
     };
 
     public async ValueTask InitializeAsync()
