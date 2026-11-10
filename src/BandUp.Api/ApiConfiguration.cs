@@ -2,9 +2,9 @@ using BandUp.Api.Auth;
 using BandUp.Api.Errors;
 using BandUp.Api.Health;
 using BandUp.Api.Middleware;
+using BandUp.Application.Abstractions;
 using BandUp.Infrastructure;
 using BandUp.Infrastructure.Configuration;
-using BandUp.Application.Abstractions;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
@@ -60,23 +60,6 @@ public static class ApiConfiguration
         services
             .AddOptions<SentrySettings>()
             .BindConfiguration(SentrySettings.SectionName)
-            .ValidateOnStart();
-
-        services
-            .AddOptions<AuthSettings>()
-            .BindConfiguration(AuthSettings.SectionName)
-            .Validate(
-                settings => !string.IsNullOrWhiteSpace(settings.SigningKey),
-                $"{AuthSettings.SectionName}:SigningKey is required.")
-            .Validate(
-                settings => settings.SigningKey is { Length: >= 32 },
-                $"{AuthSettings.SectionName}:SigningKey must be at least 32 characters.")
-            .Validate(
-                settings => settings.AccessTokenMinutes is > 0 and <= 60,
-                $"{AuthSettings.SectionName}:AccessTokenMinutes must be between 1 and 60.")
-            .Validate(
-                settings => settings.RefreshTokenDays is > 0 and <= 90,
-                $"{AuthSettings.SectionName}:RefreshTokenDays must be between 1 and 90.")
             .ValidateOnStart();
 
         services.AddHttpContextAccessor();
