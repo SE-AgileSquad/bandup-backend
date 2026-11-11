@@ -8,7 +8,10 @@ public static class ServiceProviders
     public const string Redis = "Redis";
     public const string InMemory = "InMemory";
     public const string RabbitMq = "RabbitMq";
+    public const string Turnstile = "Turnstile";
+    public const string Fake = "Fake";
 
     public static readonly string[] Cache = [Redis, InMemory];
     public static readonly string[] MessagePublisher = [RabbitMq, InMemory];
+    public static readonly string[] Captcha = [Turnstile, Fake];
 }

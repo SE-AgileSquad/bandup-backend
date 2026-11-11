@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -32,6 +33,82 @@ public static class DependencyInjection
         services.AddPersistence();
         services.AddCaching(configuration);
         services.AddMessaging(configuration);
+        services.AddSecurity(configuration);
+
+        return services;
+    }
+
+    private static IServiceCollection AddSecurity(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        // Hashing has no configuration and no per-request state. The token service reads the
+        // signing key once at startup, so it is a singleton too; a key rotation restarts the
+        // process, which the ADR accepts.
+        services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
+
+        services
+            .AddOptions<AuthSettings>()
+            .BindConfiguration(AuthSettings.SectionName)
+            .Validate(
+                settings => !string.IsNullOrWhiteSpace(settings.SigningKey),
+                $"{AuthSettings.SectionName}:SigningKey is required.")
+            .Validate(
+                settings => settings.SigningKey is { Length: >= 32 },
+                $"{AuthSettings.SectionName}:SigningKey must be at least 32 characters.")
+            .Validate(
+                settings => settings.AccessTokenMinutes is > 0 and <= 60,
+                $"{AuthSettings.SectionName}:AccessTokenMinutes must be between 1 and 60.")
+            .Validate(
+                settings => settings.RefreshTokenDays is > 0 and <= 90,
+                $"{AuthSettings.SectionName}:RefreshTokenDays must be between 1 and 90.");
+
+        // Validation runs when ITokenService is first resolved, not at startup. Only the API
+        // issues tokens, so only the API fails fast; the Worker never resolves this service.
+        services.AddSingleton<ITokenService, JwtTokenService>();
+
+        services
+            .AddOptions<CaptchaSettings>()
+            .BindConfiguration(CaptchaSettings.SectionName)
+            .Validate(
+                settings => settings.FallbackWindowMinutes is > 0 and <= 1440,
+                $"{CaptchaSettings.SectionName}:FallbackWindowMinutes must be between 1 and 1440.")
+            .Validate(
+                settings => settings.FallbackMaxAttempts is > 0 and <= 100,
+                $"{CaptchaSettings.SectionName}:FallbackMaxAttempts must be between 1 and 100.")
+            .ValidateOnStart();
+
+        services.AddHttpClient<TurnstileCaptchaVerifier>();
+
+        string captchaProvider = configuration[$"{CaptchaSettings.SectionName}:Provider"]
+            ?? ServiceProviders.Fake;
+
+        if (string.Equals(captchaProvider, ServiceProviders.Turnstile, StringComparison.OrdinalIgnoreCase))
+        {
+            services
+                .AddOptions<CaptchaSettings>()
+                .Validate(
+                    settings => !string.IsNullOrWhiteSpace(settings.SecretKey),
+                    $"{CaptchaSettings.SectionName}:SecretKey is required when " +
+                    $"{CaptchaSettings.SectionName}:Provider is {ServiceProviders.Turnstile}.")
+                .ValidateOnStart();
+
+            services.AddSingleton<ICaptchaVerifier, OutageTolerantCaptchaVerifier>(provider =>
+                new OutageTolerantCaptchaVerifier(
+                    provider.GetRequiredService<TurnstileCaptchaVerifier>(),
+                    provider.GetRequiredService<ICacheService>(),
+                    provider.GetRequiredService<IOptions<CaptchaSettings>>().Value,
+                    provider.GetRequiredService<ILogger<OutageTolerantCaptchaVerifier>>()));
+        }
+        else
+        {
+            services.AddSingleton<ICaptchaVerifier, OutageTolerantCaptchaVerifier>(provider =>
+                new OutageTolerantCaptchaVerifier(
+                    new FakeCaptchaVerifier(),
+                    provider.GetRequiredService<ICacheService>(),
+                    provider.GetRequiredService<IOptions<CaptchaSettings>>().Value,
+                    provider.GetRequiredService<ILogger<OutageTolerantCaptchaVerifier>>()));
+        }
 
         return services;
     }
