@@ -62,6 +62,11 @@ public static class ApiConfiguration
             .BindConfiguration(SentrySettings.SectionName)
             .ValidateOnStart();
 
+        // Fail-fast on a bad signing key at API boot. The rules live with the binding in
+        // Infrastructure; this host opts into running them at startup. The Worker never resolves
+        // ITokenService, so it does not inherit the requirement for a key it would never use.
+        services.AddOptions<AuthSettings>().ValidateOnStart();
+
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
 
