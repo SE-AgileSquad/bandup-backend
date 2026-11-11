@@ -16,6 +16,11 @@ const string MigrateArgument = "--migrate";
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
+// Read the signing key from the final configuration, not from the module initializer.
+// The test factory's in-memory configuration is applied after the module initializer,
+// so reading IConfiguration here would see the empty appsettings value.
+builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection(AuthSettings.SectionName));
+
 builder.Services.AddSerilog(
     BandUpLoggerConfiguration.Create(BandUpLoggerConfiguration.Api, builder.Configuration),
     dispose: true);

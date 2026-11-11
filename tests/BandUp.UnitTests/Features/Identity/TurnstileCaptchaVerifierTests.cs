@@ -4,6 +4,7 @@ using BandUp.Application.Abstractions;
 using BandUp.Infrastructure.Configuration;
 using BandUp.Infrastructure.Security;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Shouldly;
 
 namespace BandUp.UnitTests.Features.Identity;
@@ -23,7 +24,7 @@ public sealed class TurnstileCaptchaVerifierTests
 
     private static TurnstileCaptchaVerifier Create(HttpMessageHandler handler) => new(
         new HttpClient(handler),
-        Settings(),
+        Options.Create(Settings()),
         NullLogger<TurnstileCaptchaVerifier>.Instance);
 
     [Fact]
