@@ -70,6 +70,11 @@ public static class ApiConfiguration
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
 
+        services.AddCookieJwtAuthentication();
+
+        // Singleton: the service is stateless, and endpoint groups are singletons.
+        services.AddSingleton<AuthCookieService>();
+
         services.AddCors(options => options.AddPolicy(CorsPolicy, policy =>
         {
             string? origin = configuration[$"{CorsSettings.SectionName}:AllowedOrigin"];
