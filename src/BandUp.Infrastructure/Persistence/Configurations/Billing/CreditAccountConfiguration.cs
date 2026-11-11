@@ -12,14 +12,16 @@ internal sealed class CreditAccountConfiguration : IEntityTypeConfiguration<Cred
 
         builder.HasKey(account => account.Id);
 
+        // The account is an extension of the user: one row per user, keyed by it, so a user
+        // can never accumulate two balances. The unique index below is the id in practice, and
+        // the FK to identity.users is declared in the migration's companion (see the ledger).
         builder.Property(account => account.UserId).IsRequired();
         builder.HasIndex(account => account.UserId).IsUnique();
 
-        builder.Property(account => account.Balance)
-            .HasPrecision(18, 2)
-            .IsRequired();
+        builder.Property(account => account.Balance).IsRequired();
+        builder.ToTable(t => t.HasCheckConstraint("balance_non_negative", "balance >= 0"));
 
         builder.Property(account => account.CreatedAt).IsRequired();
-        builder.Property(account => account.UpdatedAt);
+        builder.Property(account => account.UpdatedAt).IsRequired();
     }
 }

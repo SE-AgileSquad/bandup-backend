@@ -63,8 +63,8 @@ public sealed class SecurityPrimitiveTests
     {
         IPasswordHasher hasher = new BcryptPasswordHasher();
 
-        hasher.Verify("anything", BcryptPasswordHasher.DummyHash).ShouldBeFalse();
-        BcryptPasswordHasher.DummyHash.ShouldStartWith("$2");
+        hasher.Verify("anything", hasher.DummyHash).ShouldBeFalse();
+        hasher.DummyHash.ShouldStartWith("$2");
     }
 
     [Fact]

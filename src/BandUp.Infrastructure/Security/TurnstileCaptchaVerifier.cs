@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using BandUp.Application.Abstractions;
 using BandUp.Infrastructure.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace BandUp.Infrastructure.Security;
 
@@ -13,7 +14,7 @@ namespace BandUp.Infrastructure.Security;
 /// </summary>
 public sealed class TurnstileCaptchaVerifier(
     HttpClient httpClient,
-    CaptchaSettings settings,
+    IOptions<CaptchaSettings> options,
     ILogger<TurnstileCaptchaVerifier> logger) : ICaptchaVerifier
 {
     private const string SiteVerifyUrl = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -36,7 +37,7 @@ public sealed class TurnstileCaptchaVerifier(
 
             FormUrlEncodedContent content = new(
             [
-                new KeyValuePair<string, string>("secret", settings.SecretKey ?? string.Empty),
+                new KeyValuePair<string, string>("secret", options.Value.SecretKey ?? string.Empty),
                 new KeyValuePair<string, string>("response", token),
                 new KeyValuePair<string, string>("remoteip", clientIp ?? string.Empty),
             ]);

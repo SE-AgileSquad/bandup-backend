@@ -142,6 +142,7 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, EfUserRepository>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
         services.AddScoped<ICreditAccountRepository, EfCreditAccountRepository>();
+        services.AddScoped<ICreditLedgerRepository, EfCreditLedgerRepository>();
 
         return services;
     }

@@ -1,3 +1,4 @@
+using BandUp.Application.Common;
 using BandUp.Domain.Common;
 using BandUp.Infrastructure.Logging;
 using Microsoft.AspNetCore.Diagnostics;
@@ -32,6 +33,23 @@ public sealed class BandUpExceptionHandler(ILogger<BandUpExceptionHandler> logge
             {
                 logger.LogError(exception, "Unhandled exception while handling {route}", route);
             }
+        }
+
+        // A unique-index race is an expected conflict (AUTH-02), not an unhandled fault: it
+        // surfaces as 409 with a stable code rather than a 500.
+        if (exception is DuplicateEntityException)
+        {
+            ProblemDetails conflict = ProblemDetailsFactory.ForError(Error.EmailTaken(), httpContext);
+
+            httpContext.Response.StatusCode = conflict.Status ?? StatusCodes.Status409Conflict;
+
+            await httpContext.Response.WriteAsJsonAsync(
+                conflict,
+                options: null,
+                contentType: "application/problem+json",
+                cancellationToken: cancellationToken);
+
+            return true;
         }
 
         ProblemDetails problem = ProblemDetailsFactory.ForUnhandledException(httpContext);
