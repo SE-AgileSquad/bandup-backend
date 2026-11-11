@@ -1,3 +1,4 @@
+using BandUp.Domain.Billing;
 using BandUp.Domain.Identity;
 using BandUp.Infrastructure.Persistence.Conventions;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,8 @@ public sealed class BandUpDbContext(DbContextOptions<BandUpDbContext> options) :
     public DbSet<User> Users => Set<User>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    public DbSet<CreditAccount> CreditAccounts => Set<CreditAccount>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
