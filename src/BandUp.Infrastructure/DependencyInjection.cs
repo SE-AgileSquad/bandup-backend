@@ -1,4 +1,5 @@
 using BandUp.Application.Abstractions;
+using BandUp.Application.Features.Billing;
 using BandUp.Application.Features.Identity;
 using BandUp.Infrastructure.Caching;
 using BandUp.Infrastructure.Configuration;
@@ -34,6 +35,7 @@ public static class DependencyInjection
         services.AddCaching(configuration);
         services.AddMessaging(configuration);
         services.AddSecurity(configuration);
+        services.AddBilling();
 
         return services;
     }
@@ -139,7 +141,14 @@ public static class DependencyInjection
 
         services.AddScoped<IUserRepository, EfUserRepository>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
+        services.AddScoped<ICreditAccountRepository, EfCreditAccountRepository>();
 
+        return services;
+    }
+
+    private static IServiceCollection AddBilling(this IServiceCollection services)
+    {
+        services.AddScoped<ICreditService, CreditService>();
         return services;
     }
 
