@@ -1,4 +1,5 @@
 using BandUp.Domain.Billing;
+using BandUp.Domain.Content;
 using BandUp.Domain.Identity;
 using BandUp.Infrastructure.Persistence.Conventions;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,12 @@ public sealed class BandUpDbContext(DbContextOptions<BandUpDbContext> options) :
     public DbSet<CreditAccount> CreditAccounts => Set<CreditAccount>();
 
     public DbSet<CreditLedgerEntry> CreditLedger => Set<CreditLedgerEntry>();
+
+    public DbSet<Passage> Passages => Set<Passage>();
+
+    public DbSet<Question> Questions => Set<Question>();
+
+    public DbSet<AnswerKey> AnswerKeys => Set<AnswerKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
