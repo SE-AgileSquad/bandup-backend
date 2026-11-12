@@ -387,6 +387,304 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("BandUp.Domain.Learning.Lesson", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body");
+
+                    b.Property<string>("QuestionType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("question_type");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lessons");
+
+                    b.ToTable("lessons", "learning", t =>
+                        {
+                            t.HasCheckConstraint("lessons_question_type_check", "question_type IN ('TrueFalseNotGiven', 'SentenceCompletion')");
+
+                            t.HasCheckConstraint("lessons_status_check", "status IN ('Draft', 'Published')");
+                        });
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Learning.LessonExample", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("EvidenceSentence")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("evidence_sentence");
+
+                    b.Property<Guid>("LessonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lesson_id");
+
+                    b.Property<string>("Paraphrase")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("paraphrase");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lesson_examples");
+
+                    b.HasIndex("LessonId")
+                        .HasDatabaseName("ix_lesson_examples_lesson_id");
+
+                    b.ToTable("lesson_examples", "learning");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Learning.LessonMap", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ErrorPattern")
+                        .HasColumnType("text")
+                        .HasColumnName("error_pattern");
+
+                    b.Property<Guid>("LessonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lesson_id");
+
+                    b.Property<string>("QuestionType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("question_type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lesson_map");
+
+                    b.HasIndex("LessonId")
+                        .HasDatabaseName("ix_lesson_map_lesson_id");
+
+                    b.HasIndex("QuestionType", "ErrorPattern")
+                        .IsUnique()
+                        .HasDatabaseName("ix_lesson_map_question_type_error_pattern");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("QuestionType", "ErrorPattern"), false);
+
+                    b.ToTable("lesson_map", "learning", t =>
+                        {
+                            t.HasCheckConstraint("lesson_map_question_type_check", "question_type IN ('TrueFalseNotGiven', 'SentenceCompletion')");
+                        });
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Learning.LessonProgress", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<Guid>("LessonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lesson_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lesson_progress");
+
+                    b.HasIndex("LessonId")
+                        .HasDatabaseName("ix_lesson_progress_lesson_id");
+
+                    b.HasIndex("UserId", "LessonId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_lesson_progress_user_id_lesson_id");
+
+                    b.ToTable("lesson_progress", "learning");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Vocabulary.ParaphrasePair", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("EquivalentSentence")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("equivalent_sentence");
+
+                    b.Property<Guid?>("QuestionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("question_id");
+
+                    b.Property<string>("SourceSentence")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("source_sentence");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_paraphrase_pairs");
+
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("ix_paraphrase_pairs_created_by");
+
+                    b.HasIndex("QuestionId")
+                        .HasDatabaseName("ix_paraphrase_pairs_question_id");
+
+                    b.ToTable("paraphrase_pairs", "vocabulary", t =>
+                        {
+                            t.HasCheckConstraint("paraphrase_pairs_status_check", "status IN ('Draft', 'Approved')");
+                        });
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Vocabulary.ReviewItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date")
+                        .HasColumnName("due_date");
+
+                    b.Property<string>("ItemType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("item_type");
+
+                    b.Property<DateTimeOffset?>("LastReviewedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_reviewed_at");
+
+                    b.Property<int>("LeitnerBox")
+                        .HasColumnType("integer")
+                        .HasColumnName("leitner_box");
+
+                    b.Property<Guid?>("ParaphrasePairId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("paraphrase_pair_id");
+
+                    b.Property<int>("StreakCorrect")
+                        .HasColumnType("integer")
+                        .HasColumnName("streak_correct");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid?>("VocabCardId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("vocab_card_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_review_items");
+
+                    b.HasIndex("ParaphrasePairId")
+                        .HasDatabaseName("ix_review_items_paraphrase_pair_id");
+
+                    b.HasIndex("UserId", "DueDate")
+                        .HasDatabaseName("ix_review_items_user_id_due_date");
+
+                    b.HasIndex("UserId", "ParaphrasePairId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_review_items_user_id_paraphrase_pair_id")
+                        .HasFilter("paraphrase_pair_id IS NOT NULL");
+
+                    b.HasIndex("UserId", "VocabCardId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_review_items_user_id_vocab_card_id")
+                        .HasFilter("vocab_card_id IS NOT NULL");
+
+                    b.ToTable("review_items", "vocabulary", t =>
+                        {
+                            t.HasCheckConstraint("review_items_leitner_box_check", "leitner_box BETWEEN 1 AND 5");
+
+                            t.HasCheckConstraint("review_items_streak_correct_check", "streak_correct >= 0");
+
+                            t.HasCheckConstraint("review_items_target_check", "(item_type = 'Vocab'\n    AND vocab_card_id IS NOT NULL AND paraphrase_pair_id IS NULL)\nOR\n(item_type = 'Paraphrase'\n    AND paraphrase_pair_id IS NOT NULL AND vocab_card_id IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Vocabulary.VocabCard", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContextSentence")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("context_sentence");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("SourceQuestionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_question_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("Word")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("word");
+
+                    b.HasKey("Id")
+                        .HasName("pk_vocab_cards");
+
+                    b.HasAlternateKey("UserId", "Id")
+                        .HasName("ak_vocab_cards_user_id_id");
+
+                    b.HasIndex("SourceQuestionId")
+                        .HasDatabaseName("ix_vocab_cards_source_question_id");
+
+                    b.HasIndex("UserId", "Word")
+                        .IsUnique()
+                        .HasDatabaseName("ix_vocab_cards_user_id_word");
+
+                    b.ToTable("vocab_cards", "vocabulary");
+                });
+
             modelBuilder.Entity("BandUp.Domain.Content.AnswerKey", b =>
                 {
                     b.HasOne("BandUp.Domain.Content.Question", null)
@@ -439,6 +737,98 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_refresh_tokens_users_user_id");
                 });
 
+            modelBuilder.Entity("BandUp.Domain.Learning.LessonExample", b =>
+                {
+                    b.HasOne("BandUp.Domain.Learning.Lesson", null)
+                        .WithMany("Examples")
+                        .HasForeignKey("LessonId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_lesson_examples_lessons_lesson_id");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Learning.LessonMap", b =>
+                {
+                    b.HasOne("BandUp.Domain.Learning.Lesson", null)
+                        .WithMany()
+                        .HasForeignKey("LessonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_lesson_map_lessons_lesson_id");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Learning.LessonProgress", b =>
+                {
+                    b.HasOne("BandUp.Domain.Learning.Lesson", null)
+                        .WithMany()
+                        .HasForeignKey("LessonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_lesson_progress_lessons_lesson_id");
+
+                    b.HasOne("BandUp.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_lesson_progress_users_user_id");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Vocabulary.ParaphrasePair", b =>
+                {
+                    b.HasOne("BandUp.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_paraphrase_pairs_users_created_by");
+
+                    b.HasOne("BandUp.Domain.Content.Question", null)
+                        .WithMany()
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_paraphrase_pairs_questions_question_id");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Vocabulary.ReviewItem", b =>
+                {
+                    b.HasOne("BandUp.Domain.Vocabulary.ParaphrasePair", null)
+                        .WithMany()
+                        .HasForeignKey("ParaphrasePairId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_review_items_paraphrase_pairs_paraphrase_pair_id");
+
+                    b.HasOne("BandUp.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_review_items_users_user_id");
+
+                    b.HasOne("BandUp.Domain.Vocabulary.VocabCard", null)
+                        .WithMany()
+                        .HasForeignKey("UserId", "VocabCardId")
+                        .HasPrincipalKey("UserId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_review_items_vocab_cards_user_id_vocab_card_id");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Vocabulary.VocabCard", b =>
+                {
+                    b.HasOne("BandUp.Domain.Content.Question", null)
+                        .WithMany()
+                        .HasForeignKey("SourceQuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_vocab_cards_questions_source_question_id");
+
+                    b.HasOne("BandUp.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_vocab_cards_users_user_id");
+                });
+
             modelBuilder.Entity("BandUp.Domain.Content.Passage", b =>
                 {
                     b.Navigation("Questions");
@@ -447,6 +837,11 @@ namespace BandUp.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("BandUp.Domain.Content.Question", b =>
                 {
                     b.Navigation("AnswerKey");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Learning.Lesson", b =>
+                {
+                    b.Navigation("Examples");
                 });
 #pragma warning restore 612, 618
         }

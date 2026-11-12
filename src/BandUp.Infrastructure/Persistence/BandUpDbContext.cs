@@ -1,6 +1,8 @@
 using BandUp.Domain.Billing;
 using BandUp.Domain.Content;
 using BandUp.Domain.Identity;
+using BandUp.Domain.Learning;
+using BandUp.Domain.Vocabulary;
 using BandUp.Infrastructure.Persistence.Conventions;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +26,20 @@ public sealed class BandUpDbContext(DbContextOptions<BandUpDbContext> options) :
     public DbSet<Question> Questions => Set<Question>();
 
     public DbSet<AnswerKey> AnswerKeys => Set<AnswerKey>();
+
+    public DbSet<Lesson> Lessons => Set<Lesson>();
+
+    public DbSet<LessonExample> LessonExamples => Set<LessonExample>();
+
+    public DbSet<LessonMap> LessonMaps => Set<LessonMap>();
+
+    public DbSet<LessonProgress> LessonProgressEntries => Set<LessonProgress>();
+
+    public DbSet<ParaphrasePair> ParaphrasePairs => Set<ParaphrasePair>();
+
+    public DbSet<VocabCard> VocabCards => Set<VocabCard>();
+
+    public DbSet<ReviewItem> ReviewItems => Set<ReviewItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
