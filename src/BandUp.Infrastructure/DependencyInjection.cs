@@ -14,6 +14,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using BandUp.Application.Features.Learning;
+using BandUp.Application.Features.Reading;
+using BandUp.Infrastructure.Persistence.Queries.Learning;
+using BandUp.Infrastructure.Persistence.Queries.Reading;
 
 namespace BandUp.Infrastructure;
 
@@ -143,6 +147,8 @@ public static class DependencyInjection
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
         services.AddScoped<ICreditAccountRepository, EfCreditAccountRepository>();
         services.AddScoped<ICreditLedgerRepository, EfCreditLedgerRepository>();
+        services.AddScoped<IReadingQueries, ReadingQueries>();
+        services.AddScoped<ILessonQueries, LessonQueries>();
 
         return services;
     }
