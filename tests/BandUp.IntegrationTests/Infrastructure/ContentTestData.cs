@@ -3,6 +3,7 @@ using System.Text.Json;
 using BandUp.Domain.Content;
 using BandUp.Domain.Learning;
 using BandUp.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -22,6 +23,14 @@ public static class ContentTestData
         Guid PassageId,
         Guid TrueFalseQuestionId,
         Guid CompletionQuestionId);
+
+    /// <summary>
+    /// A client that does not keep cookies. Tests send the session cookie of the user they act as,
+    /// explicitly, so a second user registered through the same client can never inherit the
+    /// first user's session (which the CSRF guard would then reject on a header-less POST).
+    /// </summary>
+    public static HttpClient CreateClient(BandUpApiFactory factory) =>
+        factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
 
     public static async Task<TestUser> RegisterAndLoginAsync(HttpClient client, string prefix)
     {
@@ -65,6 +74,24 @@ public static class ContentTestData
         if (user is not null)
         {
             request.Headers.Add("Cookie", user.AccessCookie);
+        }
+
+        return request;
+    }
+
+    /// <summary>
+    /// A state-changing request as the browser sends it: JSON body, the session cookie and the
+    /// CSRF header the API requires whenever a session cookie is present.
+    /// </summary>
+    public static HttpRequestMessage Send(HttpMethod method, string url, TestUser user, object? body = null)
+    {
+        HttpRequestMessage request = new(method, url);
+        request.Headers.Add("Cookie", user.AccessCookie);
+        request.Headers.Add("X-Requested-With", "bandup");
+
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body);
         }
 
         return request;

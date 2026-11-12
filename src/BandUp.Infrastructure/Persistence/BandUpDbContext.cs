@@ -5,6 +5,7 @@ using BandUp.Domain.Learning;
 using BandUp.Domain.Vocabulary;
 using BandUp.Infrastructure.Persistence.Conventions;
 using Microsoft.EntityFrameworkCore;
+using BandUp.Domain.Exams;
 
 namespace BandUp.Infrastructure.Persistence;
 
@@ -40,6 +41,10 @@ public sealed class BandUpDbContext(DbContextOptions<BandUpDbContext> options) :
     public DbSet<VocabCard> VocabCards => Set<VocabCard>();
 
     public DbSet<ReviewItem> ReviewItems => Set<ReviewItem>();
+
+    public DbSet<Attempt> Attempts => Set<Attempt>();
+
+    public DbSet<AttemptAnswer> AttemptAnswers => Set<AttemptAnswer>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

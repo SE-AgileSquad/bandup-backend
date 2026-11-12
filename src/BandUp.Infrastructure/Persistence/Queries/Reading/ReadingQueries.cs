@@ -74,4 +74,11 @@ internal sealed class ReadingQueries(BandUpDbContext context) : IReadingQueries
 
         return new PassageDto(header.Id, header.Title, header.Body, header.Version, header.PublishedAt, questions);
     }
+
+    public async Task<IReadOnlyList<Guid>> GetQuestionIdsAsync(Guid passageId, CancellationToken cancellationToken) =>
+        await context.Questions
+            .AsNoTracking()
+            .Where(question => question.PassageId == passageId)
+            .Select(question => question.Id)
+            .ToListAsync(cancellationToken);
 }

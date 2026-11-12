@@ -277,6 +277,112 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("BandUp.Domain.Exams.Attempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<Guid>("PassageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("passage_id");
+
+                    b.Property<int?>("RawScore")
+                        .HasColumnType("integer")
+                        .HasColumnName("raw_score");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("SubmittedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("submitted_at");
+
+                    b.Property<int?>("TotalQuestions")
+                        .HasColumnType("integer")
+                        .HasColumnName("total_questions");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_attempts");
+
+                    b.HasIndex("PassageId")
+                        .HasDatabaseName("ix_attempts_passage_id");
+
+                    b.HasIndex("UserId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_attempts_user_idempotency_key")
+                        .HasFilter("idempotency_key IS NOT NULL");
+
+                    b.HasIndex("UserId", "PassageId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_attempts_user_passage_in_progress")
+                        .HasFilter("status = 'InProgress'");
+
+                    b.HasIndex("UserId", "StartedAt")
+                        .HasDatabaseName("ix_attempts_user_started_at");
+
+                    b.ToTable("attempts", "exams", t =>
+                        {
+                            t.HasCheckConstraint("attempts_status_check", "status IN ('InProgress', 'Submitted')");
+                        });
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Exams.AttemptAnswer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AttemptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("attempt_id");
+
+                    b.Property<bool?>("IsCorrect")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_correct");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("question_id");
+
+                    b.Property<string>("SelectedAnswer")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("selected_answer");
+
+                    b.HasKey("Id")
+                        .HasName("pk_attempt_answers");
+
+                    b.HasIndex("QuestionId")
+                        .HasDatabaseName("ix_attempt_answers_question_id");
+
+                    b.HasIndex("AttemptId", "QuestionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_attempt_answers_attempt_question");
+
+                    b.ToTable("attempt_answers", "exams");
+                });
+
             modelBuilder.Entity("BandUp.Domain.Identity.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -727,6 +833,40 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_questions_passages_passage_id");
                 });
 
+            modelBuilder.Entity("BandUp.Domain.Exams.Attempt", b =>
+                {
+                    b.HasOne("BandUp.Domain.Content.Passage", null)
+                        .WithMany()
+                        .HasForeignKey("PassageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_attempts_passages_passage_id");
+
+                    b.HasOne("BandUp.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_attempts_users_user_id");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Exams.AttemptAnswer", b =>
+                {
+                    b.HasOne("BandUp.Domain.Exams.Attempt", null)
+                        .WithMany("Answers")
+                        .HasForeignKey("AttemptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_attempt_answers_attempts_attempt_id");
+
+                    b.HasOne("BandUp.Domain.Content.Question", null)
+                        .WithMany()
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_attempt_answers_questions_question_id");
+                });
+
             modelBuilder.Entity("BandUp.Domain.Identity.RefreshToken", b =>
                 {
                     b.HasOne("BandUp.Domain.Identity.User", null)
@@ -837,6 +977,11 @@ namespace BandUp.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("BandUp.Domain.Content.Question", b =>
                 {
                     b.Navigation("AnswerKey");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Exams.Attempt", b =>
+                {
+                    b.Navigation("Answers");
                 });
 
             modelBuilder.Entity("BandUp.Domain.Learning.Lesson", b =>

@@ -17,4 +17,10 @@ public interface IReadingQueries
     /// not published. Questions come back without <see cref="QuestionDto.RelatedLessonId"/>.
     /// </summary>
     Task<PassageDto?> GetPublishedPassageAsync(Guid passageId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The ids of every question of a passage, whatever its publication state. An attempt that
+    /// is already running must stay answerable even if the passage is archived meanwhile.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetQuestionIdsAsync(Guid passageId, CancellationToken cancellationToken);
 }
