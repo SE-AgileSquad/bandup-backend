@@ -16,6 +16,8 @@ public sealed class BandUpDbContext(DbContextOptions<BandUpDbContext> options) :
 
     public DbSet<CreditAccount> CreditAccounts => Set<CreditAccount>();
 
+    public DbSet<CreditLedgerEntry> CreditLedger => Set<CreditLedgerEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(BandUpDbContext).Assembly);

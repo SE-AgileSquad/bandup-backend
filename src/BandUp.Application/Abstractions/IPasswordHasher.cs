@@ -9,4 +9,11 @@ public interface IPasswordHasher
     string Hash(string password);
 
     bool Verify(string password, string hash);
+
+    /// <summary>
+    /// A hash of a password that was never set. Login verifies an unknown email against this
+    /// so both failure paths do the same amount of work (AUTH-07). It can never match: the
+    /// implementation derives it from a value no user can submit.
+    /// </summary>
+    string DummyHash { get; }
 }

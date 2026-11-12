@@ -30,16 +30,15 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<decimal>("Balance")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)")
+                    b.Property<int>("Balance")
+                        .HasColumnType("integer")
                         .HasColumnName("balance");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
-                    b.Property<DateTimeOffset?>("UpdatedAt")
+                    b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
@@ -54,31 +53,65 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_credit_accounts_user_id");
 
-                    b.ToTable("credit_accounts", "billing");
+                    b.ToTable("credit_accounts", "billing", t =>
+                        {
+                            t.HasCheckConstraint("balance_non_negative", "balance >= 0");
+                        });
                 });
 
-            modelBuilder.Entity("BandUp.Domain.Billing.CreditTransaction", b =>
+            modelBuilder.Entity("BandUp.Domain.Billing.CreditLedgerEntry", b =>
                 {
-                    b.Property<Guid>("AccountId")
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("account_id");
+                        .HasColumnName("id");
 
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("amount");
-
-                    b.Property<DateTimeOffset>("OccurredAt")
+                    b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("occurred_at");
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedByAdminId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_admin_id");
+
+                    b.Property<int>("Delta")
+                        .HasColumnType("integer")
+                        .HasColumnName("delta");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("note");
 
                     b.Property<string>("Reason")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
                         .HasColumnName("reason");
 
-                    b.ToTable("credit_transactions", "billing");
+                    b.Property<Guid?>("ReferenceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reference_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_credit_ledger");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_credit_ledger_user_id");
+
+                    b.HasIndex("Reason", "ReferenceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_ledger_reason_reference")
+                        .HasFilter("reference_id IS NOT NULL");
+
+                    b.ToTable("credit_ledger", "billing", t =>
+                        {
+                            t.HasCheckConstraint("delta_non_zero", "delta <> 0");
+                        });
                 });
 
             modelBuilder.Entity("BandUp.Domain.Identity.RefreshToken", b =>
