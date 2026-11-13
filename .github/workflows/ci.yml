@@ -26,7 +26,12 @@ jobs:
         run: dotnet build --no-restore -c Release
 
       - name: Test
-        run: dotnet test --no-build -c Release -- --report-trx --results-directory TestResults --diagnostic --diagnostic-verbosity Trace
+        # Run one project at a time: launching all three MTP test hosts at once on a
+        # 2-core runner made their handshake pipe time out before it connected.
+        run: |
+          dotnet test tests/BandUp.UnitTests --no-build -c Release -- --report-trx --results-directory TestResults
+          dotnet test tests/BandUp.ArchitectureTests --no-build -c Release -- --report-trx --results-directory TestResults
+          dotnet test tests/BandUp.IntegrationTests --no-build -c Release -- --report-trx --results-directory TestResults
 
       - name: Publish test results
         if: always()
