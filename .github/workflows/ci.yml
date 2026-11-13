@@ -26,12 +26,13 @@ jobs:
         run: dotnet build --no-restore -c Release
 
       - name: Test
-        # Run one project at a time: launching all three MTP test hosts at once on a
-        # 2-core runner made their handshake pipe time out before it connected.
+        # Run each test host directly instead of through "dotnet test": its --server IPC
+        # handshake fails against this SDK regardless of timing, concurrency or TMPDIR.
         run: |
-          dotnet test tests/BandUp.UnitTests --no-build -c Release -- --report-trx --results-directory TestResults
-          dotnet test tests/BandUp.ArchitectureTests --no-build -c Release -- --report-trx --results-directory TestResults
-          dotnet test tests/BandUp.IntegrationTests --no-build -c Release -- --report-trx --results-directory TestResults
+          mkdir -p TestResults
+          dotnet exec tests/BandUp.UnitTests/bin/Release/net10.0/BandUp.UnitTests.dll --report-trx --results-directory TestResults
+          dotnet exec tests/BandUp.ArchitectureTests/bin/Release/net10.0/BandUp.ArchitectureTests.dll --report-trx --results-directory TestResults
+          dotnet exec tests/BandUp.IntegrationTests/bin/Release/net10.0/BandUp.IntegrationTests.dll --report-trx --results-directory TestResults
 
       - name: Publish test results
         if: always()
