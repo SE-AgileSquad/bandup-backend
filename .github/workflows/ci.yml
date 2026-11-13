@@ -26,7 +26,13 @@ jobs:
         run: dotnet build --no-restore -c Release
 
       - name: Test
+        # TMPDIR is forced to /tmp because Microsoft.Testing.Platform's handshake uses a Unix
+        # domain socket under TMPDIR, whose path has a ~108-char limit; the runner's default
+        # work directory (/home/runner/work/<repo>/<repo>/...) is long enough to exceed it,
+        # which fails the handshake before a single test runs.
         run: dotnet test --no-build -c Release -- --report-trx --results-directory TestResults
+        env:
+          TMPDIR: /tmp
 
       - name: Publish test results
         if: always()
