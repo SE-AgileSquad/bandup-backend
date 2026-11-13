@@ -26,17 +26,4 @@ jobs:
         run: dotnet build --no-restore -c Release
 
       - name: Test
-        # Run each test host directly instead of through "dotnet test": its --server IPC
-        # handshake fails against this SDK regardless of timing, concurrency or TMPDIR.
-        run: |
-          mkdir -p TestResults
-          tests/BandUp.UnitTests/bin/Release/net10.0/BandUp.UnitTests --report-trx --results-directory TestResults
-          tests/BandUp.ArchitectureTests/bin/Release/net10.0/BandUp.ArchitectureTests --report-trx --results-directory TestResults
-          tests/BandUp.IntegrationTests/bin/Release/net10.0/BandUp.IntegrationTests --report-trx --results-directory TestResults
-
-      - name: Publish test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: TestResults
+        run: dotnet test --no-build -c Release
