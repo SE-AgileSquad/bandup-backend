@@ -26,7 +26,7 @@ jobs:
         run: dotnet build --no-restore -c Release
 
       - name: Test
-        run: dotnet test --no-build -c Release --logger "trx" --results-directory TestResults
+        run: dotnet test --no-build -c Release -- --report-trx --results-directory TestResults
 
       - name: Publish test results
         if: always()
