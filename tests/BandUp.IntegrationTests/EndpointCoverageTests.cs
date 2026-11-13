@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.RegularExpressions;
 using BandUp.IntegrationTests.Infrastructure;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,7 +12,7 @@ namespace BandUp.IntegrationTests;
 /// COV-01 fails when an endpoint is added or removed without updating it.
 /// </summary>
 [Collection(BandUpCollection.Name)]
-public sealed partial class EndpointCoverageTests(BandUpTestEnvironment environment)
+public sealed class EndpointCoverageTests(BandUpTestEnvironment environment)
 {
     /// <summary>
     /// Endpoint to the tests that call it. The values are documentation for the reader and for
@@ -78,9 +77,9 @@ public sealed partial class EndpointCoverageTests(BandUpTestEnvironment environm
         foreach (RouteEndpoint endpoint in factory.Services.GetRequiredService<EndpointDataSource>()
                      .Endpoints.OfType<RouteEndpoint>())
         {
-            string path = Normalize(endpoint.RoutePattern.RawText ?? string.Empty);
+            string path = EndpointHitRecorder.Normalize(endpoint.RoutePattern.RawText ?? string.Empty);
 
-            if (!IsApplicationRoute(path))
+            if (!EndpointHitRecorder.IsApplicationRoute(path))
             {
                 continue;
             }
@@ -99,23 +98,4 @@ public sealed partial class EndpointCoverageTests(BandUpTestEnvironment environm
         mapped.Except(listed).ShouldBeEmpty("These endpoints have no entry in the coverage manifest.");
         listed.Except(mapped).ShouldBeEmpty("The manifest lists endpoints that are no longer mapped.");
     }
-
-    private static bool IsApplicationRoute(string path) =>
-        path.StartsWith("/api/", StringComparison.Ordinal)
-        || path is "/live" or "/health" or "/ready";
-
-    /// <summary>
-    /// Drops route constraints ({id:guid} becomes {id}) and a trailing slash, so the manifest is
-    /// written the way people read routes.
-    /// </summary>
-    private static string Normalize(string pattern)
-    {
-        string withoutConstraints = ConstraintPattern().Replace(pattern, "{$1}");
-        string trimmed = withoutConstraints.Length > 1 ? withoutConstraints.TrimEnd('/') : withoutConstraints;
-
-        return trimmed;
-    }
-
-    [GeneratedRegex(@"\{(\w+):[^}]+\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex ConstraintPattern();
 }
