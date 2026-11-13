@@ -1,7 +1,7 @@
 using BandUp.Application.Features.Identity;
-using BandUp.Domain.Identity;
 using BandUp.Infrastructure.Configuration;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -55,7 +55,8 @@ public static class AuthExtensions
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
         services.AddAuthorization(options => options.AddPolicy(
-            AdminPolicy, policy => policy.RequireAuthenticatedUser().RequireRole(nameof(Role.Admin))));
+            AdminPolicy, policy => policy.RequireAuthenticatedUser().AddRequirements(new ActiveAdminRequirement())));
+        services.AddScoped<IAuthorizationHandler, ActiveAdminHandler>();
 
         return services;
     }

@@ -9,7 +9,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using NSubstitute;
 using Shouldly;
 
 namespace BandUp.IntegrationTests;
@@ -19,6 +21,7 @@ public sealed class AdminContentRequestTests
     [Theory]
     [InlineData("/api/admin/passages")]
     [InlineData("/api/admin/lessons")]
+    [InlineData("/api/admin/users")]
     public async Task Admin_Lists_Reject_Anonymous_And_Ordinary_Users(string path)
     {
         await using AuthorizationApiFactory factory = new();
@@ -37,14 +40,16 @@ public sealed class AdminContentRequestTests
     [Theory]
     [InlineData("/api/admin/passages", "sourceNote")]
     [InlineData("/api/admin/lessons", "questionType")]
-    public async Task Invalid_Admin_Input_Is_Rejected_Before_Opening_A_Database_Transaction(
-        string path, string invalidField)
+    [InlineData("/api/admin/users/01998a61-7ca4-7c0b-8051-9ee86f71afab/role", "role")]
+    public async Task Invalid_Admin_Input_Is_Rejected_Before_Opening_A_Database_Transaction(string path, string field)
     {
-        await using AuthorizationApiFactory factory = new();
+        Guid adminId = Guid.CreateVersion7();
+        await using AuthorizationApiFactory factory = new(adminId);
         using HttpClient client = factory.CreateClient();
         AccessToken token = factory.Services.GetRequiredService<ITokenService>().CreateAccessToken(
-            Guid.CreateVersion7(), "Admin", TimeProvider.System.GetUtcNow());
-        using HttpRequestMessage request = new(HttpMethod.Post, path)
+            adminId, "Admin", TimeProvider.System.GetUtcNow());
+        HttpMethod method = field == "role" ? HttpMethod.Patch : HttpMethod.Post;
+        using HttpRequestMessage request = new(method, path)
         {
             Content = JsonContent.Create(new { title = "", body = "" }),
         };
@@ -55,11 +60,14 @@ public sealed class AdminContentRequestTests
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         JsonElement body = await response.Content.ReadFromJsonAsync<JsonElement>();
         JsonElement errors = body.GetProperty("errors");
-        errors.TryGetProperty("title", out _).ShouldBeTrue();
-        errors.TryGetProperty(invalidField, out _).ShouldBeTrue();
+        errors.TryGetProperty(field, out _).ShouldBeTrue();
+        if (method == HttpMethod.Post)
+        {
+            errors.TryGetProperty("title", out _).ShouldBeTrue();
+        }
     }
 
-    private sealed class AuthorizationApiFactory : WebApplicationFactory<Program>
+    private sealed class AuthorizationApiFactory(Guid? adminId = null) : WebApplicationFactory<Program>
     {
         protected override IHost CreateHost(IHostBuilder builder)
         {
@@ -80,7 +88,14 @@ public sealed class AdminContentRequestTests
         {
             builder.UseEnvironment("Testing");
             builder.ConfigureTestServices(services =>
-                services.AddDataProtection().UseEphemeralDataProtectionProvider());
+            {
+                services.AddDataProtection().UseEphemeralDataProtectionProvider();
+                IUserRepository users = Substitute.For<IUserRepository>();
+                users.IsActiveAdminAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+                    .Returns(call => call.ArgAt<Guid>(0) == adminId);
+                services.RemoveAll<IUserRepository>();
+                services.AddSingleton(users);
+            });
         }
     }
 }

@@ -1,5 +1,7 @@
 using BandUp.Application.Abstractions;
+using BandUp.Application.Common;
 using BandUp.Application.Features.Identity;
+using BandUp.Application.Features.Identity.Admin.ListAdminUsers;
 using BandUp.Domain.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,6 +29,23 @@ public sealed class EfUserRepository(BandUpDbContext context) : IUserRepository
     public Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken) =>
         context.Users.AnyAsync(user => user.Email == email, cancellationToken);
 
-    public Task<int> CountAdminsAsync(CancellationToken cancellationToken) =>
-        context.Users.CountAsync(user => user.Role == Role.Admin, cancellationToken);
+    public Task<PagedResult<AdminUserDto>> ListForAdminAsync(PageRequest page, CancellationToken cancellationToken) =>
+        EfStoreOperations.ReadPageAsync(
+            context.Users.AsNoTracking().OrderBy(user => user.Email).ThenBy(user => user.Id)
+                .Select(user => new AdminUserDto(user.Id, user.DisplayName, user.Email, user.Role, user.IsActive)),
+            page, cancellationToken);
+
+    public Task<bool> IsActiveAdminAsync(Guid userId, CancellationToken cancellationToken) =>
+        context.Users.AnyAsync(user => user.Id == userId && user.Role == Role.Admin && user.IsActive, cancellationToken);
+
+    public Task LockRoleChangesAsync(CancellationToken cancellationToken)
+    {
+        const int identityLockNamespace = 42411;
+        const int roleChangesLock = 1;
+        return context.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({identityLockNamespace}, {roleChangesLock})", cancellationToken);
+    }
+
+    public Task<int> CountActiveAdminsAsync(CancellationToken cancellationToken) =>
+        context.Users.CountAsync(user => user.Role == Role.Admin && user.IsActive, cancellationToken);
 }

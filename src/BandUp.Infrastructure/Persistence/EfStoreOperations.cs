@@ -4,7 +4,7 @@ using Npgsql;
 
 namespace BandUp.Infrastructure.Persistence;
 
-internal static class AdminContentOperations
+internal static class EfStoreOperations
 {
     internal static async Task<bool> TryDeleteAsync<T>(IQueryable<T> query, CancellationToken cancellationToken)
     {

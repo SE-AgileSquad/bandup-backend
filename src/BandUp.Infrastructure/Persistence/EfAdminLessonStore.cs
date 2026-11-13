@@ -20,15 +20,15 @@ public sealed class EfAdminLessonStore(BandUpDbContext context) : IAdminLessonSt
         context.Lessons.AddAsync(lesson, cancellationToken).AsTask();
 
     public Task<bool> TryDeleteLessonAsync(Guid id, CancellationToken cancellationToken) =>
-        AdminContentOperations.TryDeleteAsync(context.Lessons.Where(lesson => lesson.Id == id), cancellationToken);
+        EfStoreOperations.TryDeleteAsync(context.Lessons.Where(lesson => lesson.Id == id), cancellationToken);
 
     public Task<bool> TryDeleteExampleAsync(Guid lessonId, Guid exampleId, CancellationToken cancellationToken) =>
-        AdminContentOperations.TryDeleteAsync(
+        EfStoreOperations.TryDeleteAsync(
             context.LessonExamples.Where(example => example.LessonId == lessonId && example.Id == exampleId),
             cancellationToken);
 
     public Task<PagedResult<LessonSummary>> ListAsync(PageRequest page, CancellationToken cancellationToken) =>
-        AdminContentOperations.ReadPageAsync(
+        EfStoreOperations.ReadPageAsync(
             context.Lessons.AsNoTracking().OrderBy(lesson => lesson.SortOrder).ThenBy(lesson => lesson.Id)
                 .Select(lesson => new LessonSummary(
                     lesson.Id, lesson.Title, lesson.QuestionType, lesson.SortOrder, lesson.Status)),

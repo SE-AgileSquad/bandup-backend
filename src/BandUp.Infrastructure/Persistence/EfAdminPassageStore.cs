@@ -25,15 +25,15 @@ public sealed class EfAdminPassageStore(BandUpDbContext context) : IAdminPassage
         context.Passages.AddAsync(passage, cancellationToken).AsTask();
 
     public Task<bool> TryDeletePassageAsync(Guid id, CancellationToken cancellationToken) =>
-        AdminContentOperations.TryDeleteAsync(context.Passages.Where(passage => passage.Id == id), cancellationToken);
+        EfStoreOperations.TryDeleteAsync(context.Passages.Where(passage => passage.Id == id), cancellationToken);
 
     public Task<bool> TryDeleteQuestionAsync(Guid passageId, Guid questionId, CancellationToken cancellationToken) =>
-        AdminContentOperations.TryDeleteAsync(
+        EfStoreOperations.TryDeleteAsync(
             context.Questions.Where(question => question.PassageId == passageId && question.Id == questionId),
             cancellationToken);
 
     public Task<PagedResult<PassageSummary>> ListAsync(PageRequest page, CancellationToken cancellationToken) =>
-        AdminContentOperations.ReadPageAsync(
+        EfStoreOperations.ReadPageAsync(
             context.Passages.AsNoTracking().OrderBy(passage => passage.Title).ThenBy(passage => passage.Id)
                 .Select(passage => new PassageSummary(
                     passage.Id, passage.Title, passage.Status, passage.Version, passage.PublishedAt)),
