@@ -1,4 +1,5 @@
 using BandUp.Application.Features.Identity;
+using BandUp.Domain.Identity;
 using BandUp.Infrastructure.Configuration;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +15,8 @@ namespace BandUp.Api.Auth;
 /// </summary>
 public static class AuthExtensions
 {
+    public const string AdminPolicy = "Admin";
+
     public static IServiceCollection AddCookieJwtAuthentication(this IServiceCollection services)
     {
         // Read the settings from IOptions at runtime, not from IConfiguration at registration
@@ -51,7 +54,8 @@ public static class AuthExtensions
             });
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
-        services.AddAuthorization();
+        services.AddAuthorization(options => options.AddPolicy(
+            AdminPolicy, policy => policy.RequireAuthenticatedUser().RequireRole(nameof(Role.Admin))));
 
         return services;
     }
