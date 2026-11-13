@@ -30,9 +30,9 @@ jobs:
         # handshake fails against this SDK regardless of timing, concurrency or TMPDIR.
         run: |
           mkdir -p TestResults
-          dotnet exec tests/BandUp.UnitTests/bin/Release/net10.0/BandUp.UnitTests.dll --report-trx --results-directory TestResults
-          dotnet exec tests/BandUp.ArchitectureTests/bin/Release/net10.0/BandUp.ArchitectureTests.dll --report-trx --results-directory TestResults
-          dotnet exec tests/BandUp.IntegrationTests/bin/Release/net10.0/BandUp.IntegrationTests.dll --report-trx --results-directory TestResults
+          tests/BandUp.UnitTests/bin/Release/net10.0/BandUp.UnitTests --report-trx --results-directory TestResults
+          tests/BandUp.ArchitectureTests/bin/Release/net10.0/BandUp.ArchitectureTests --report-trx --results-directory TestResults
+          tests/BandUp.IntegrationTests/bin/Release/net10.0/BandUp.IntegrationTests --report-trx --results-directory TestResults
 
       - name: Publish test results
         if: always()
