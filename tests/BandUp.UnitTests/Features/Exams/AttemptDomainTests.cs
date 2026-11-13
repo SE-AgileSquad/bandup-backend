@@ -50,6 +50,20 @@ public sealed class AttemptDomainTests
     }
 
     [Fact]
+    public void Timestamps_Are_Kept_At_Microsecond_Precision_Like_The_Database()
+    {
+        DateTimeOffset withExtraDigit = Start.AddTicks(7);
+        Attempt attempt = Attempt.Start(_userId, _passageId, withExtraDigit, Duration);
+
+        attempt.StartedAt.ShouldBe(Start);
+        attempt.ExpiresAt.ShouldBe(Start + Duration);
+
+        attempt.Submit([], Keys, "key-1", Start.AddMinutes(3).AddTicks(9));
+
+        attempt.SubmittedAt.ShouldBe(Start.AddMinutes(3));
+    }
+
+    [Fact]
     public void RemainingAt_Counts_Down_And_Stops_At_Zero()
     {
         Attempt attempt = NewAttempt();

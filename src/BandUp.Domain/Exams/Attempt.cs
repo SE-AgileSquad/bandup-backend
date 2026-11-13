@@ -62,12 +62,14 @@ public sealed class Attempt : Entity
             throw new DomainException("An attempt must have a positive duration.");
         }
 
+        DateTimeOffset startedAt = AtDatabasePrecision(now);
+
         return new Attempt
         {
             UserId = userId,
             PassageId = passageId,
-            StartedAt = now,
-            ExpiresAt = now + duration,
+            StartedAt = startedAt,
+            ExpiresAt = startedAt + duration,
         };
     }
 
@@ -177,11 +179,19 @@ public sealed class Attempt : Entity
         }
 
         Status = AttemptStatus.Submitted;
-        SubmittedAt = withinTime ? now : ExpiresAt;
+        SubmittedAt = withinTime ? AtDatabasePrecision(now) : ExpiresAt;
         RawScore = score;
         TotalQuestions = keysByQuestion.Count;
         IdempotencyKey = idempotencyKey;
     }
+
+    /// <summary>
+    /// PostgreSQL keeps timestamps to the microsecond while a .NET clock reads to 100 ns. Cutting
+    /// the extra digit here makes what is returned right after a write identical to what is read
+    /// back later, which a replayed submit relies on to return a byte-identical result.
+    /// </summary>
+    private static DateTimeOffset AtDatabasePrecision(DateTimeOffset value) =>
+        value.AddTicks(-(value.Ticks % (TimeSpan.TicksPerMillisecond / 1000)));
 
     private void ApplyAnswer(Guid questionId, string? selectedAnswer)
     {

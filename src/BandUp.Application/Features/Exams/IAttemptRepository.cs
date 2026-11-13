@@ -20,6 +20,11 @@ public interface IAttemptRepository : IRepository<Attempt>
     Task<Attempt?> FindInProgressAsync(Guid userId, Guid passageId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Whether this learner already used the idempotency key to submit some attempt.
+    /// </summary>
+    Task<bool> IdempotencyKeyUsedAsync(Guid userId, string idempotencyKey, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Serializes concurrent starts by the same user on the same passage until the surrounding
     /// transaction ends, so the "is there already one?" check and the insert cannot interleave.
     /// </summary>

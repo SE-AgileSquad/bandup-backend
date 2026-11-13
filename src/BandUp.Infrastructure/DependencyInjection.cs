@@ -19,6 +19,7 @@ using BandUp.Application.Features.Reading;
 using BandUp.Infrastructure.Persistence.Queries.Learning;
 using BandUp.Infrastructure.Persistence.Queries.Reading;
 using BandUp.Application.Features.Exams;
+using BandUp.Infrastructure.Persistence.Queries.Exams;
 
 namespace BandUp.Infrastructure;
 
@@ -151,6 +152,7 @@ public static class DependencyInjection
         services.AddScoped<IReadingQueries, ReadingQueries>();
         services.AddScoped<IAttemptRepository, EfAttemptRepository>();
         services.AddScoped<ILessonQueries, LessonQueries>();
+        services.AddScoped<IAnswerKeyQueries, AnswerKeyQueries>();
 
         return services;
     }

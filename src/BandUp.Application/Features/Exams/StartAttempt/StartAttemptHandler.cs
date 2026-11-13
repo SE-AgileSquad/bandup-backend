@@ -14,6 +14,8 @@ public sealed class StartAttemptHandler(
     ICurrentUser currentUser,
     IAttemptRepository attempts,
     IReadingQueries readingQueries,
+    IAnswerKeyQueries answerKeyQueries,
+    IUnitOfWork unitOfWork,
     TimeProvider timeProvider)
     : ICommandHandler<StartAttemptCommand, StartAttemptResult>
 {
@@ -41,8 +43,20 @@ public sealed class StartAttemptHandler(
 
         if (existing is not null)
         {
-            return Result<StartAttemptResult>.Success(
-                new StartAttemptResult(AttemptStateDto.From(existing, now), false));
+            if (existing.CanAcceptAnswers(now))
+            {
+                return Result<StartAttemptResult>.Success(
+                    new StartAttemptResult(AttemptStateDto.From(existing, now), false));
+            }
+
+            // The old attempt ran out of time and was never submitted. Close it with the answers
+            // it holds, and save that before inserting the new one: the unique index allows only
+            // one in-progress attempt, so the update must reach the database first.
+            IReadOnlyList<ScoringKey> keys =
+                await answerKeyQueries.GetScoringKeysAsync(command.PassageId, cancellationToken);
+
+            existing.Submit([], keys, $"auto-closed-{existing.Id:N}", now);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
         Attempt attempt = Attempt.Start(userId, command.PassageId, now, ExamRules.AttemptDuration);

@@ -44,6 +44,11 @@ public sealed class EfAttemptRepository(BandUpDbContext context) : IAttemptRepos
                     && attempt.Status == AttemptStatus.InProgress,
                 cancellationToken);
 
+    public Task<bool> IdempotencyKeyUsedAsync(Guid userId, string idempotencyKey, CancellationToken cancellationToken) =>
+        context.Attempts.AnyAsync(
+            attempt => attempt.UserId == userId && attempt.IdempotencyKey == idempotencyKey,
+            cancellationToken);
+
     public async Task AcquireStartLockAsync(Guid userId, Guid passageId, CancellationToken cancellationToken)
     {
         string key = $"exams:start:{userId:N}:{passageId:N}";
