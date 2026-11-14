@@ -114,6 +114,9 @@ public sealed class BandUpTestEnvironment : IAsyncLifetime
         await _rabbitMq.DisposeAsync();
         await _redis.DisposeAsync();
         await _postgres.DisposeAsync();
+
+        // Last, so the containers are always cleaned up even when the coverage gate fails.
+        EndpointHitRecorder.WriteReportAndEnforceMinimum();
     }
 
     public static BandUpDbContext CreateContext(string connectionString)
