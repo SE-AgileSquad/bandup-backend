@@ -1,7 +1,8 @@
 # 0016 — Refresh/logout contracts and committed revocation outcomes
 
-**Status:** Accepted. Phase 1 defines the contract and verifies transaction semantics;
-handlers, endpoints, cookie changes and Infrastructure adapters follow in later phases.
+**Status:** Accepted. Phases 1 and 2 define the contract, verify transaction semantics and add
+the supporting adapters. Refresh/logout handlers, HTTP endpoints, cookie changes and JWT
+blacklist enforcement follow in later phases.
 
 ## Context
 
@@ -112,8 +113,39 @@ command as successful. It must not log token values or hashes.
 - Later phases must verify atomic rotation, concurrent refresh/reuse and logout races,
   inactive users, cookie deletion/attributes, CSRF, blacklist expiry and Redis failures through
   integration tests before AUTH-09/AUTH-10 are considered implemented.
-- The existing schema can be reused if database locking provides the concurrency boundary.
-  Repository locking, revocation adapters, session issuance policy, DI wiring and any required
-  migration belong to the next phase. No new package is required for this decision.
+- Phase 2 reuses the existing schema with the locking, revocation and issuance adapters
+  described below. It requires no migration or new package.
 - The two refresh outcomes carry different data so a revocation rejection cannot accidentally
   supply replacement cookies. All callers must handle both cases explicitly after dispatch.
+
+## Phase 2 implementation
+
+- `IRefreshTokenStore.FindSessionForUpdateAsync` first locates the owner by token hash, locks
+  that user's row with PostgreSQL `SELECT ... FOR UPDATE`, then re-reads the token and user.
+  The returned user is a fresh snapshot; the token is tracked for mutation. An existing tracked
+  token is refreshed without overwriting pending changes: callers must lock before mutating.
+  Unknown credentials return null; revoked and expired rows are still returned for classification.
+- Session insertion, single-token revocation and all-user revocation acquire the same user-row
+  lock, held until the existing transaction ends. They require the unit of work's default
+  Read Committed isolation; a repeatable-read snapshot could hide preceding token changes even
+  after the lock wait. Missing or unsupported transactions are rejected. Saving/committing is
+  left to the caller. No token lock precedes the user lock. All-user revocation
+  includes expired unrevoked rows; single-token revocation filters by the authenticated user
+  before touching a token, so a foreign cookie never causes a foreign-user lock or mutation.
+- `ISessionTokenIssuer` creates the access JWT, opaque refresh value and hashed refresh row
+  using the configured lifetimes. Login now uses this policy and returns internal refresh
+  expiry metadata for the later cookie phase. Its public JSON response is unchanged. Refresh
+  will use the same policy with the fresh user's current role.
+- `IAccessTokenRevocationStore` uses the existing cache abstraction, backed by Redis or its
+  in-memory fake. Keys are `auth:revoked-jti:<id>` under the cache's `bandup:` prefix. Retention
+  ends at JWT expiry plus the shared 30-second validation skew. Redis read failures warn and
+  fail open; write failures propagate. Cancellation and unexpected errors propagate too.
+  The store is registered now; authentication enforcement and logout calls follow later.
+- Revocation-store writes are immediate and independent of the PostgreSQL transaction. A
+  successful Redis write followed by a database rollback leaves the access token blacklisted;
+  a Redis write failure can roll back database changes through the command pipeline. The
+  logout phase must test write and commit failures and must never claim atomicity across stores.
+- Adapter integration tests use separate PostgreSQL connections and observe an actual lock
+  wait before releasing the first transaction. They cover committed rotation, rollback, stale
+  tracked state, current user role, concurrent insertion/revocation, owner isolation and Redis
+  TTL. These are adapter probes, not proof of the future AUTH-09/AUTH-10 HTTP flows.

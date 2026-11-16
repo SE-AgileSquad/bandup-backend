@@ -35,7 +35,7 @@ public static class AuthExtensions
                     ValidateAudience = true,
                     ValidateIssuerSigningKey = true,
                     ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromSeconds(30),
+                    ClockSkew = AuthSettings.AccessTokenClockSkew,
                 };
 
                 options.Events = new JwtBearerEvents
