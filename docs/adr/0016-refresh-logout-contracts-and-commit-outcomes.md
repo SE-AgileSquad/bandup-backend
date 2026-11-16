@@ -1,8 +1,8 @@
 # 0016 — Refresh/logout contracts and committed revocation outcomes
 
-**Status:** Accepted. Phases 1 and 2 define the contract, verify transaction semantics and add
-the supporting adapters. Refresh/logout handlers, HTTP endpoints, cookie changes and JWT
-blacklist enforcement follow in later phases.
+**Status:** Accepted. Phases 1–3 define the contract, add the supporting adapters and implement
+the refresh command/handler. Logout, HTTP endpoints, cookie changes and JWT blacklist
+enforcement follow in later phases.
 
 ## Context
 
@@ -49,7 +49,7 @@ Introduce `RefreshOutcome` in Application with two distinct cases:
 - `RejectedAfterRevocation`: reuse was detected and all of that user's unrevoked refresh
   tokens were revoked. This case cannot carry replacement tokens.
 
-The future handler returns `Result<RefreshOutcome>.Success(new
+The handler returns `Result<RefreshOutcome>.Success(new
 RefreshOutcome.RejectedAfterRevocation())` only after recording the required revocations in
 the current transaction. The existing pipeline saves and commits them. After dispatch
 completes, the endpoint maps this case through `Error.InvalidRefreshToken()` to the same
@@ -135,7 +135,7 @@ command as successful. It must not log token values or hashes.
 - `ISessionTokenIssuer` creates the access JWT, opaque refresh value and hashed refresh row
   using the configured lifetimes. Login now uses this policy and returns internal refresh
   expiry metadata for the later cookie phase. Its public JSON response is unchanged. Refresh
-  will use the same policy with the fresh user's current role.
+  uses the same policy with the fresh user's current role.
 - `IAccessTokenRevocationStore` uses the existing cache abstraction, backed by Redis or its
   in-memory fake. Keys are `auth:revoked-jti:<id>` under the cache's `bandup:` prefix. Retention
   ends at JWT expiry plus the shared 30-second validation skew. Redis read failures warn and
@@ -149,3 +149,27 @@ command as successful. It must not log token values or hashes.
   wait before releasing the first transaction. They cover committed rotation, rollback, stale
   tracked state, current user role, concurrent insertion/revocation, owner isolation and Redis
   TTL. These are adapter probes, not proof of the future AUTH-09/AUTH-10 HTTP flows.
+
+## Phase 3 implementation
+
+- `RefreshCommand` carries the nullable raw refresh-cookie value and optional user agent.
+  `RefreshHandler` is discovered by the existing Application handler registration. It needs
+  no access-token identity or CAPTCHA. No validator turns missing credentials into a `400`;
+  missing/blank, unknown, expired unrevoked and inactive-user credentials return the existing
+  `INVALID_REFRESH_TOKEN` failure. A missing user is returned as an unknown session by the store.
+- The handler hashes the presented credential and uses `FindSessionForUpdateAsync` before
+  classifying it. It reads `TimeProvider` after acquiring the lock, so credentials that expire
+  while waiting are rejected. Revocation is checked before expiry or account activity: a known
+  revoked token always triggers all-user refresh revocation, including for an inactive user.
+- Reuse logs a structured warning containing the user id, without token values or hashes,
+  and returns `RejectedAfterRevocation` as a completed result. The existing pipeline commits
+  the revocations before dispatch returns. Storage/save/commit failures propagate instead.
+- For an active user with an unrevoked, unexpired token, the shared issuer creates a successor
+  with the current role and configured lifetimes. `Rotate` revokes the old row and sets its
+  replacement id; insertion joins the same transaction. Only after commit does dispatch return
+  the issued access token, raw refresh token and refresh expiry for the later cookie endpoint.
+- Handler-level integration tests verify committed rotation and reuse, failed-result behavior,
+  rollback after flushed mutations and simulated commit failures. Concurrent real refresh
+  commands serialize: the loser detects reuse and revokes the winner's successor, as specified
+  above. HTTP status mapping, cookie behavior and complete AUTH-09/AUTH-10 acceptance remain
+  for the endpoint/logout phases.
