@@ -1,4 +1,6 @@
 using BandUp.Application.Features.Identity;
+using BandUp.Application.Common;
+using BandUp.Api.Errors;
 using BandUp.Infrastructure.Configuration;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
@@ -69,6 +71,13 @@ public static class AuthExtensions
                         {
                             context.Fail("Session revoked.");
                         }
+                    },
+                    OnChallenge = async context =>
+                    {
+                        context.HandleResponse();
+                        context.Response.Headers.WWWAuthenticate = JwtBearerDefaults.AuthenticationScheme;
+                        await Error.Unauthorized("Sign in to access this resource.")
+                            .ToProblem(context.HttpContext).ExecuteAsync(context.HttpContext);
                     },
                 };
             });

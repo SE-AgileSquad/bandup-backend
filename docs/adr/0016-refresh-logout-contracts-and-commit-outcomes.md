@@ -1,8 +1,8 @@
 # 0016 — Refresh/logout contracts and committed revocation outcomes
 
-**Status:** Accepted. Phases 1–4 implement the supporting adapters, refresh/logout commands
-and JWT blacklist enforcement. HTTP endpoints, cookie changes and final acceptance checks
-follow in later phases.
+**Status:** Accepted. Phases 1–5 implement the supporting adapters, refresh/logout commands,
+JWT blacklist enforcement, HTTP endpoints and cookie lifecycle. Final acceptance checks and
+usage documentation remain in phase 6.
 
 ## Context
 
@@ -200,6 +200,40 @@ command as successful. It must not log token values or hashes.
   existing cookie-only contract; a bearer header cannot supply logout authentication.
 - Tests dispatch logout with a principal produced by the real JWT authentication handler,
   verify PostgreSQL/Redis outcomes and partial failures, and prove `/api/auth/me` rejects a
-  restored copy of the logged-out JWT. The production logout endpoint and cookie deletion are
-  still deferred to phase 5; HTTP logout/refresh acceptance and cross-handler race checks remain
-  part of the final verification phase. No migration or package is required.
+  restored copy of the logged-out JWT. Phase 5 adds the production logout endpoint and cookie
+  deletion; final acceptance and cross-handler race checks remain in phase 6. No migration or
+  package is required.
+
+## Phase 5 implementation
+
+- `POST /api/auth/refresh` is explicitly anonymous and reads only the configured refresh
+  cookie. Its empty JSON request type has no credential fields. After dispatch commits,
+  `Issued` writes replacement cookies and returns an empty `200`; a normal invalid-token
+  failure or completed `RejectedAfterRevocation` clears both cookies and returns the same
+  `401 INVALID_REFRESH_TOKEN` ProblemDetails. The endpoint handles both completed outcomes
+  explicitly. Infrastructure failures propagate without issuing or deleting cookies.
+- `POST /api/auth/logout` requires access authentication, dispatches the cookie-based logout
+  command, and deletes both cookies only after successful dispatch. It returns empty `204`.
+  Authentication failures return `401` without claiming logout or deleting cookies; Redis or
+  database failures return the existing generic infrastructure error without cookie changes.
+- `AuthCookieService` owns refresh-cookie reads, both-cookie issuance and both-cookie deletion.
+  Login and refresh pass the actual issued access/refresh expiry metadata. Both cookies have
+  explicit `Path=/`, host-only scope, `HttpOnly`, `SameSite=Strict`, the configured `Secure`
+  flag and `Expires`. HTTP cookie dates have second precision. Deletion uses the same policy,
+  names and scope, with an empty value and expired date. No raw tokens are returned in JSON.
+- Authentication/authorization middleware is placed explicitly after request-id, logging,
+  CORS and the existing CSRF guard. JWT challenges now use the common `UNAUTHORIZED`
+  ProblemDetails response and request id instead of an empty response. CSRF rejections still
+  occur before the handlers and do not change sessions or cookies. JSON-binding exceptions
+  preserve their client-error HTTP status in generic validation ProblemDetails; malformed
+  JSON does not become an infrastructure `500` or trigger session mutation/cookie changes.
+- OpenAPI declares required empty JSON request shapes, empty success responses and the error statuses.
+  Descriptions state the cookie credentials and `X-Requested-With: bandup` requirement. In
+  Development, Swagger UI's [request interceptor](https://swagger.io/docs/open-source-tools/swagger-ui/usage/configuration/)
+  adds that header only to same-origin `/api/` requests using an unsafe method and JSON content
+  type. Server-side CSRF checks remain active, and no interceptor is installed outside
+  Development. No frontend or manual access-token entry is needed for the local Swagger flow.
+- HTTP integration tests cover the login/refresh/logout cookie jar, secure/custom-name policy,
+  actual token expiry, refresh without valid access authentication, committed reuse rejection,
+  logout authorization, CSRF and failure responses. Final cross-handler races and consolidated
+  setup/client documentation remain in phase 6. No migration or package is required.
