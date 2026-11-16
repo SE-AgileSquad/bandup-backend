@@ -1,8 +1,8 @@
 # 0016 — Refresh/logout contracts and committed revocation outcomes
 
-**Status:** Accepted. Phases 1–3 define the contract, add the supporting adapters and implement
-the refresh command/handler. Logout, HTTP endpoints, cookie changes and JWT blacklist
-enforcement follow in later phases.
+**Status:** Accepted. Phases 1–4 implement the supporting adapters, refresh/logout commands
+and JWT blacklist enforcement. HTTP endpoints, cookie changes and final acceptance checks
+follow in later phases.
 
 ## Context
 
@@ -140,7 +140,7 @@ command as successful. It must not log token values or hashes.
   in-memory fake. Keys are `auth:revoked-jti:<id>` under the cache's `bandup:` prefix. Retention
   ends at JWT expiry plus the shared 30-second validation skew. Redis read failures warn and
   fail open; write failures propagate. Cancellation and unexpected errors propagate too.
-  The store is registered now; authentication enforcement and logout calls follow later.
+  Phase 4 wires the store into authentication enforcement and the logout command.
 - Revocation-store writes are immediate and independent of the PostgreSQL transaction. A
   successful Redis write followed by a database rollback leaves the access token blacklisted;
   a Redis write failure can roll back database changes through the command pipeline. The
@@ -172,4 +172,34 @@ command as successful. It must not log token values or hashes.
   rollback after flushed mutations and simulated commit failures. Concurrent real refresh
   commands serialize: the loser detects reuse and revokes the winner's successor, as specified
   above. HTTP status mapping, cookie behavior and complete AUTH-09/AUTH-10 acceptance remain
-  for the endpoint/logout phases.
+  for the endpoint and final verification phases.
+
+## Phase 4 implementation
+
+- `ICurrentUser.AccessToken` exposes an `AccessTokenIdentity` containing only the validated
+  user id, JWT id and expiry. The API projects it from the authenticated principal, accepting
+  raw or mapped subject claims. Missing, malformed, duplicate or out-of-range required claims
+  produce no identity. Anonymous principals and the Worker's `NullCurrentUser` expose none.
+  The Application handler never decodes JWTs or accepts caller ids/expiry in the command.
+- `LogoutCommand` carries only the optional refresh-cookie value. `LogoutHandler` rejects
+  missing authentication metadata, hashes a presented refresh credential, and calls
+  `RevokeForUserAsync` with the authenticated user id. It never performs all-user revocation.
+  A missing, unknown, foreign or previously revoked refresh token still permits blacklisting
+  the authenticated access JWT. Expired refresh rows belonging to the caller are revoked too.
+- The chosen order is database revocation preparation, Redis blacklist write, then the existing
+  pipeline's database save and commit. A Redis write error aborts the command and rolls back
+  database changes. A later save or commit error can leave the access JWT blacklisted while
+  refresh revocation rolls back; Redis is not compensated. In either case no completed logout
+  outcome is returned. A client may need refresh or a new login to recover from partial failure.
+- `OnTokenValidated` checks the required claims and blacklist only after standard signature,
+  issuer, audience and lifetime validation. Known revoked JWTs fail authentication. Redis read
+  outages retain the warning/fail-open policy for otherwise-valid JWTs; they do not bypass the
+  preceding validation or claim checks. Logout retains the full expiry-plus-skew blacklist TTL.
+- Cookie transport is explicit: when no access cookie is present, `OnMessageReceived` returns
+  `NoResult` to prevent JwtBearer's default Authorization-header fallback. This enforces the
+  existing cookie-only contract; a bearer header cannot supply logout authentication.
+- Tests dispatch logout with a principal produced by the real JWT authentication handler,
+  verify PostgreSQL/Redis outcomes and partial failures, and prove `/api/auth/me` rejects a
+  restored copy of the logged-out JWT. The production logout endpoint and cookie deletion are
+  still deferred to phase 5; HTTP logout/refresh acceptance and cross-handler race checks remain
+  part of the final verification phase. No migration or package is required.

@@ -1,4 +1,5 @@
 using BandUp.Application.Abstractions;
+using BandUp.Application.Features.Identity;
 
 namespace BandUp.Infrastructure.Security;
 
@@ -12,4 +13,6 @@ public sealed class NullCurrentUser : ICurrentUser
     public string? Role => null;
 
     public bool IsAuthenticated => false;
+
+    public AccessTokenIdentity? AccessToken => null;
 }

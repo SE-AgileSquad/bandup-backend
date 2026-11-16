@@ -40,12 +40,35 @@ public static class AuthExtensions
 
                 options.Events = new JwtBearerEvents
                 {
-                    // The cookie is the transport. No cookie, no token, no Authorization
-                    // header fallback: the spec's cookie-first design, unchanged.
+                    // NoResult prevents JwtBearer's default Authorization-header fallback.
                     OnMessageReceived = context =>
                     {
                         context.Token = context.Request.Cookies[settings.AccessCookieName];
+
+                        if (string.IsNullOrWhiteSpace(context.Token))
+                        {
+                            context.NoResult();
+                        }
+
                         return Task.CompletedTask;
+                    },
+                    OnTokenValidated = async context =>
+                    {
+                        AccessTokenIdentity? identity = AccessTokenClaims.Read(context.Principal);
+
+                        if (identity is null)
+                        {
+                            context.Fail("Invalid session claims.");
+                            return;
+                        }
+
+                        IAccessTokenRevocationStore revocations = context.HttpContext.RequestServices
+                            .GetRequiredService<IAccessTokenRevocationStore>();
+
+                        if (await revocations.IsRevokedAsync(identity.TokenId, context.HttpContext.RequestAborted))
+                        {
+                            context.Fail("Session revoked.");
+                        }
                     },
                 };
             });
