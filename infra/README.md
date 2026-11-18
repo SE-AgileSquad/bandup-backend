@@ -50,12 +50,14 @@ Nginx already points at the right certificate path.
 
 ## Deploying
 
-CI builds and tests every push and pull request to `main` ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).
-CD ([`.github/workflows/cd.yml`](../.github/workflows/cd.yml)) runs only after CI succeeds on `main`: it builds the
-api/worker images, pushes them to GHCR, then SSHes into the server and runs `deploy.sh`.
+CI builds and tests every push and pull request to `main` and `development`
+([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)). CD
+([`.github/workflows/cd.yml`](../.github/workflows/cd.yml)) runs only after CI succeeds on either
+branch: it builds the api/worker images, pushes them to GHCR, then SSHes into the server and runs
+`deploy.sh` — `main` deploys to the `production` environment, `development` to `staging`.
 
-Required repository secrets (Settings → Secrets and variables → Actions), plus a `production`
-environment if you want a manual approval gate before deploy:
+Required repository secrets (Settings → Secrets and variables → Actions), plus `production` and
+`staging` environments if you want a manual approval gate before deploy:
 
 | Secret | Value |
 |---|---|
@@ -64,9 +66,9 @@ environment if you want a manual approval gate before deploy:
 | `DEPLOY_SSH_KEY` | the deploy user's **private** key |
 | `DEPLOY_PATH` | `/srv/bandup` (or wherever the repo was cloned) |
 
-Required branch protection (Settings → Branches → `main`): require the CI `build-and-test`
-check to pass and require a pull-request review before merging. This is a one-time manual
-setting; GitHub does not let a workflow file configure it.
+Required branch protection (Settings → Branches, for both `main` and `development`): require the
+CI `build-and-test` check to pass and require a pull-request review before merging. This is a
+one-time manual setting; GitHub does not let a workflow file configure it.
 
 To deploy by hand instead of through CD:
 
