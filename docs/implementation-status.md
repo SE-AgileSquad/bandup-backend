@@ -94,9 +94,10 @@ can be moved without editing the file. See the README section "Ports that cannot
 
 ## Not in this repository, by design
 
-The frontend (a separate repository). Its container is not yet part of
-`docker-compose.prod.yml` or the Nginx config — add it as its own service and a `location /`
-block once that repository is ready to deploy alongside this one.
+The frontend's source (a separate repository, SE-AgileSquad/BandUpFront). Its built image is
+referenced by tag (`FRONTEND_IMAGE`) in `docker-compose.prod.yml` and served by Nginx at `/`,
+the same way `API_IMAGE`/`WORKER_IMAGE` are — the frontend repo's own CI/CD builds and pushes
+that image.
 
 ## DevOps step (C11)
 
