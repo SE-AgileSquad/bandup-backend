@@ -1,8 +1,8 @@
 # 0016 — Refresh/logout contracts and committed revocation outcomes
 
-**Status:** Accepted. Phases 1–5 implement the supporting adapters, refresh/logout commands,
-JWT blacklist enforcement, HTTP endpoints and cookie lifecycle. Final acceptance checks and
-usage documentation remain in phase 6.
+**Status:** Accepted. All six backend phases are implemented and verified. The supporting
+adapters, refresh/logout commands, JWT blacklist, HTTP/cookie lifecycle, final acceptance
+checks and setup/client documentation are complete. See [acceptance coverage](../auth-session-acceptance.md).
 
 ## Context
 
@@ -110,9 +110,10 @@ command as successful. It must not log token values or hashes.
   PostgreSQL token rows. It proves that `RejectedAfterRevocation` commits revocations before
   dispatch returns, while an ordinary failed refresh result rolls its mutations back. This
   verifies the transaction contract, not the future refresh/reuse handler or HTTP mapping.
-- Later phases must verify atomic rotation, concurrent refresh/reuse and logout races,
+- Acceptance coverage verifies atomic rotation, concurrent refresh/reuse and logout races,
   inactive users, cookie deletion/attributes, CSRF, blacklist expiry and Redis failures through
-  integration tests before AUTH-09/AUTH-10 are considered implemented.
+  integration tests. Native-browser/real-widget and deployment checks remain outside this
+  backend run, as recorded in the acceptance matrix.
 - Phase 2 reuses the existing schema with the locking, revocation and issuance adapters
   described below. It requires no migration or new package.
 - The two refresh outcomes carry different data so a revocation rejection cannot accidentally
@@ -171,8 +172,8 @@ command as successful. It must not log token values or hashes.
 - Handler-level integration tests verify committed rotation and reuse, failed-result behavior,
   rollback after flushed mutations and simulated commit failures. Concurrent real refresh
   commands serialize: the loser detects reuse and revokes the winner's successor, as specified
-  above. HTTP status mapping, cookie behavior and complete AUTH-09/AUTH-10 acceptance remain
-  for the endpoint and final verification phases.
+  above. Phases 5 and 6 verify HTTP status mapping, cookie behavior and backend AUTH-09/AUTH-10
+  acceptance.
 
 ## Phase 4 implementation
 
@@ -201,8 +202,8 @@ command as successful. It must not log token values or hashes.
 - Tests dispatch logout with a principal produced by the real JWT authentication handler,
   verify PostgreSQL/Redis outcomes and partial failures, and prove `/api/auth/me` rejects a
   restored copy of the logged-out JWT. Phase 5 adds the production logout endpoint and cookie
-  deletion; final acceptance and cross-handler race checks remain in phase 6. No migration or
-  package is required.
+  deletion; phase 6 verifies both HTTP refresh/logout race orders. No migration or package is
+  required.
 
 ## Phase 5 implementation
 
@@ -235,5 +236,24 @@ command as successful. It must not log token values or hashes.
   Development. No frontend or manual access-token entry is needed for the local Swagger flow.
 - HTTP integration tests cover the login/refresh/logout cookie jar, secure/custom-name policy,
   actual token expiry, refresh without valid access authentication, committed reuse rejection,
-  logout authorization, CSRF and failure responses. Final cross-handler races and consolidated
-  setup/client documentation remain in phase 6. No migration or package is required.
+  logout authorization, CSRF and failure responses. Phase 6 adds the final cross-handler races
+  and consolidated setup/client documentation. No migration or package is required.
+
+## Phase 6 acceptance and documentation
+
+- Real HTTP race tests verify duplicate refresh, logout-first and refresh-first orders, and
+  independent users. They hold a session lock and observe the other connection waiting in
+  PostgreSQL before releasing it. The tests preserve the presented-credential contract:
+  logout with stale cookies after refresh does not revoke the newly issued successor. Clients
+  must finish pending renewal before sending logout, including when coordinating across tabs.
+- A subprocess acceptance check launches the built API with `--migrate`, isolated Production
+  configuration and a separate database inside the test PostgreSQL container. It verifies
+  successful exit, applied migrations and required extensions without developer secrets or
+  the development compose stack. Swagger page/script assets are verified through HTTP too.
+- [Local setup](../auth-local-setup.md) covers Docker, optional secrets reset, signing key,
+  fake CAPTCHA, HTTP cookies, alternative ports and the Swagger session walkthrough.
+  [The client contract](../auth-client-contract.md) covers credentials, empty success bodies,
+  refresh/logout coordination, reuse and partial-failure recovery.
+  [The acceptance matrix](../auth-session-acceptance.md) records verification and remaining
+  browser/deployment boundaries. The README, architecture and implementation status reflect
+  the implemented Identity/Billing slices. This phase changes tests and documentation only.

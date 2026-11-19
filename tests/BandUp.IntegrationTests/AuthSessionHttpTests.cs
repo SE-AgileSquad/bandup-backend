@@ -337,6 +337,28 @@ public sealed class AuthSessionHttpTests(BandUpTestEnvironment environment)
         initialization.Contains("X-Requested-With", StringComparison.Ordinal).ShouldBe(helperExpected);
     }
 
+    [Fact]
+    public async Task AUTH_09_10_Swagger_Page_And_Its_Scripts_Load_From_The_Api_Without_A_Frontend()
+    {
+        await using BandUpApiFactory factory = CreateFactory();
+        using HttpClient client = ManualClient(factory);
+        string html = await client.GetStringAsync("/swagger/index.html");
+        html.ShouldContain("id=\"swagger-ui\"");
+        string[] scripts = html.Split("<script src=\"", StringSplitOptions.None).Skip(1)
+            .Select(part => part.Split('"')[0]).ToArray();
+        scripts.Length.ShouldBeGreaterThanOrEqualTo(3);
+        Uri page = new("http://localhost/swagger/index.html");
+
+        foreach (string source in scripts)
+        {
+            Uri url = new(page, source);
+            url.Host.ShouldBe(page.Host);
+            using HttpResponseMessage script = await client.GetAsync(url);
+            script.StatusCode.ShouldBe(HttpStatusCode.OK);
+            (await script.Content.ReadAsStringAsync()).ShouldNotBeEmpty();
+        }
+    }
+
     private BandUpApiFactory CreateFactory(bool secure = false, bool customNames = false, string? failure = null, string environmentName = "Development") =>
         new(environment, environmentName: environmentName, overrides: new()
         {
