@@ -4,6 +4,8 @@ using BandUp.Application.Common;
 using BandUp.Application.Features.Exams;
 using BandUp.Application.Features.Exams.GetAttempt;
 using BandUp.Application.Features.Exams.GetAttemptResult;
+using BandUp.Application.Features.Exams.GetPassageAttemptSummaries;
+using BandUp.Application.Features.Exams.ListAttemptHistory;
 using BandUp.Application.Features.Exams.SaveAnswer;
 using BandUp.Application.Features.Exams.StartAttempt;
 using BandUp.Application.Features.Exams.SubmitAttempt;
@@ -33,6 +35,18 @@ public sealed class AttemptEndpoints : IEndpointGroup
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound);
+
+        endpoints.MapGet("/", ListAttemptHistoryAsync)
+            .WithName("Attempts_History")
+            .RequireAuthorization()
+            .Produces<PagedResult<AttemptHistoryItemDto>>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        endpoints.MapGet("/summary", GetPassageAttemptSummariesAsync)
+            .WithName("Attempts_PassageSummaries")
+            .RequireAuthorization()
+            .Produces<IReadOnlyList<PassageAttemptSummaryDto>>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
 
         endpoints.MapGet("/{attemptId:guid}", GetAttemptAsync)
             .WithName("Attempts_Get")
@@ -88,6 +102,47 @@ public sealed class AttemptEndpoints : IEndpointGroup
         return result.Value.Created
             ? TypedResults.Created($"/api/attempts/{state.Id}", state)
             : TypedResults.Ok(state);
+    }
+
+    /// <summary>
+    /// The learner's test history: submitted attempts only, newest first. A sitting that ran out
+    /// of time recorded no result and is not listed.
+    /// </summary>
+    private static async Task<IResult> ListAttemptHistoryAsync(
+        IDispatcher dispatcher,
+        HttpContext httpContext,
+        CancellationToken cancellationToken,
+        int page = 1,
+        int pageSize = PageRequest.DefaultPageSize)
+    {
+        Result<PagedResult<AttemptHistoryItemDto>> result =
+            await dispatcher.QueryAsync<ListAttemptHistoryQuery, PagedResult<AttemptHistoryItemDto>>(
+                new ListAttemptHistoryQuery(page, pageSize),
+                cancellationToken);
+
+        return result.IsSuccess
+            ? TypedResults.Ok(result.Value)
+            : result.ToProblem(httpContext);
+    }
+
+    /// <summary>
+    /// Where the learner stands on each passage they have started: running with the time left, or
+    /// completed with the last score. A passage with no entry is new to them. The Reading Tests
+    /// list combines this with the passage list.
+    /// </summary>
+    private static async Task<IResult> GetPassageAttemptSummariesAsync(
+        IDispatcher dispatcher,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyList<PassageAttemptSummaryDto>> result =
+            await dispatcher.QueryAsync<GetPassageAttemptSummariesQuery, IReadOnlyList<PassageAttemptSummaryDto>>(
+                new GetPassageAttemptSummariesQuery(),
+                cancellationToken);
+
+        return result.IsSuccess
+            ? TypedResults.Ok(result.Value)
+            : result.ToProblem(httpContext);
     }
 
     private static async Task<IResult> GetAttemptAsync(

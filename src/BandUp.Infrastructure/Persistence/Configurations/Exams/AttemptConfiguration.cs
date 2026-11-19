@@ -25,6 +25,12 @@ internal sealed class AttemptConfiguration : IEntityTypeConfiguration<Attempt>
         builder.Property(attempt => attempt.SubmittedAt).HasColumnType("timestamptz");
         builder.Property(attempt => attempt.IdempotencyKey).HasMaxLength(100);
 
+        // One digit after the point (5.5), at most 9.0. Null until the attempt is graded.
+        builder.Property(attempt => attempt.ApproxBand).HasPrecision(2, 1);
+        builder.ToTable(table => table.HasCheckConstraint(
+            "attempts_approx_band_check",
+            "approx_band IS NULL OR (approx_band >= 0 AND approx_band <= 9)"));
+
         // At most one attempt in progress per learner and passage. The handler serializes starts
         // with a lock; this index is the backstop that makes a second one impossible.
         builder.HasIndex(attempt => new { attempt.UserId, attempt.PassageId })

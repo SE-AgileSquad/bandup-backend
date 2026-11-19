@@ -20,7 +20,10 @@ public static class ExamErrors
         new(AttemptNotFoundCode, "The attempt does not exist.", ErrorType.NotFound);
 
     public static Error AttemptExpired() =>
-        new(AttemptExpiredCode, "The time for this attempt has run out.", ErrorType.Conflict);
+        new(
+            AttemptExpiredCode,
+            "Time ran out before this test was submitted, so no result was recorded.",
+            ErrorType.Conflict);
 
     public static Error AttemptAlreadySubmitted() =>
         new(AttemptAlreadySubmittedCode, "This attempt was already submitted.", ErrorType.Conflict);

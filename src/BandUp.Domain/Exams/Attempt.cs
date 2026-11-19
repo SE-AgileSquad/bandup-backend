@@ -41,6 +41,12 @@ public sealed class Attempt : Entity
 
     public int? TotalQuestions { get; private set; }
 
+    /// <summary>
+    /// The approximate IELTS band for the score, set once when the attempt is graded and null
+    /// before that. See <see cref="BandEstimator"/>.
+    /// </summary>
+    public decimal? ApproxBand { get; private set; }
+
     public string? IdempotencyKey { get; private set; }
 
     public IReadOnlyList<AttemptAnswer> Answers => _answers.AsReadOnly();
@@ -79,11 +85,47 @@ public sealed class Attempt : Entity
         Status == AttemptStatus.InProgress && now <= ExpiresAt + SubmissionGrace;
 
     /// <summary>
-    /// Time left on the deadline as the server sees it; zero once submitted or past the deadline.
+    /// The status as the clock sees it. An attempt still stored as in progress whose deadline and
+    /// grace have passed is expired even if nothing has closed it yet, so a read never shows a
+    /// finished sitting as running.
+    /// </summary>
+    public AttemptStatus EffectiveStatus(DateTimeOffset now) =>
+        Status == AttemptStatus.InProgress && now > ExpiresAt + SubmissionGrace
+            ? AttemptStatus.Expired
+            : Status;
+
+    /// <summary>
+    /// Closes a sitting that ran out of time without being submitted. No score is recorded: the
+    /// learner is told that time ran out and starts the passage again. Allowed only once the
+    /// deadline and grace have passed; calling it again on an expired attempt does nothing.
+    /// </summary>
+    public void Expire(DateTimeOffset now)
+    {
+        if (Status == AttemptStatus.Submitted)
+        {
+            throw new DomainException("A submitted attempt cannot expire.");
+        }
+
+        if (Status == AttemptStatus.Expired)
+        {
+            return;
+        }
+
+        if (CanAcceptAnswers(now))
+        {
+            throw new DomainException("This attempt still has time left and cannot be closed as expired.");
+        }
+
+        Status = AttemptStatus.Expired;
+    }
+
+    /// <summary>
+    /// Time left on the deadline as the server sees it; zero once submitted, expired or past the
+    /// deadline.
     /// </summary>
     public TimeSpan RemainingAt(DateTimeOffset now)
     {
-        if (Status == AttemptStatus.Submitted)
+        if (Status != AttemptStatus.InProgress)
         {
             return TimeSpan.Zero;
         }
@@ -113,10 +155,11 @@ public sealed class Attempt : Entity
     }
 
     /// <summary>
-    /// Closes the attempt and grades it against the answer keys. Answers sent with the
-    /// submission count only while the attempt still accepts answers; after the deadline plus
-    /// grace the attempt is graded on what was already saved and recorded as submitted at the
-    /// deadline. A repeat call throws, so an attempt can never be graded twice.
+    /// Closes the attempt and grades it against the answer keys, then records the approximate
+    /// band for the score. The answers sent with the submission are applied first. It is allowed
+    /// only while the attempt still accepts answers (the deadline plus grace): after that the
+    /// sitting is expired and records no result. A repeat call throws, so an attempt can never be
+    /// graded twice.
     /// </summary>
     public void Submit(
         IReadOnlyCollection<SubmittedAnswer> finalAnswers,
@@ -132,14 +175,17 @@ public sealed class Attempt : Entity
             throw new DomainException("This attempt was already submitted.");
         }
 
+        if (!CanAcceptAnswers(now))
+        {
+            throw new DomainException("Time ran out before this attempt was submitted, so it records no result.");
+        }
+
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
             throw new DomainException("A submission requires an idempotency key.");
         }
 
         Dictionary<Guid, ScoringKey> keysByQuestion = keys.ToDictionary(key => key.QuestionId);
-
-        bool withinTime = CanAcceptAnswers(now);
 
         // Validate everything before changing anything, so a bad request leaves the attempt untouched.
         foreach (SubmittedAnswer answer in finalAnswers)
@@ -155,12 +201,9 @@ public sealed class Attempt : Entity
             }
         }
 
-        if (withinTime)
+        foreach (SubmittedAnswer answer in finalAnswers)
         {
-            foreach (SubmittedAnswer answer in finalAnswers)
-            {
-                ApplyAnswer(answer.QuestionId, answer.SelectedAnswer);
-            }
+            ApplyAnswer(answer.QuestionId, answer.SelectedAnswer);
         }
 
         int score = 0;
@@ -179,9 +222,10 @@ public sealed class Attempt : Entity
         }
 
         Status = AttemptStatus.Submitted;
-        SubmittedAt = withinTime ? AtDatabasePrecision(now) : ExpiresAt;
+        SubmittedAt = AtDatabasePrecision(now);
         RawScore = score;
         TotalQuestions = keysByQuestion.Count;
+        ApproxBand = BandEstimator.Estimate(score, keysByQuestion.Count);
         IdempotencyKey = idempotencyKey;
     }
 

@@ -1,12 +1,18 @@
 using BandUp.Application.Abstractions;
 using BandUp.Application.Features.Billing;
+using BandUp.Application.Features.Exams;
 using BandUp.Application.Features.Identity;
+using BandUp.Application.Features.Learning;
+using BandUp.Application.Features.Reading;
 using BandUp.Infrastructure.Caching;
 using BandUp.Infrastructure.Configuration;
 using BandUp.Infrastructure.Hosting;
 using BandUp.Infrastructure.Messaging;
 using BandUp.Infrastructure.Security;
 using BandUp.Infrastructure.Persistence;
+using BandUp.Infrastructure.Persistence.Queries.Exams;
+using BandUp.Infrastructure.Persistence.Queries.Learning;
+using BandUp.Infrastructure.Persistence.Queries.Reading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,12 +20,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
-using BandUp.Application.Features.Learning;
-using BandUp.Application.Features.Reading;
-using BandUp.Infrastructure.Persistence.Queries.Learning;
-using BandUp.Infrastructure.Persistence.Queries.Reading;
-using BandUp.Application.Features.Exams;
-using BandUp.Infrastructure.Persistence.Queries.Exams;
 
 namespace BandUp.Infrastructure;
 
@@ -149,10 +149,12 @@ public static class DependencyInjection
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
         services.AddScoped<ICreditAccountRepository, EfCreditAccountRepository>();
         services.AddScoped<ICreditLedgerRepository, EfCreditLedgerRepository>();
-        services.AddScoped<IReadingQueries, ReadingQueries>();
+
         services.AddScoped<IAttemptRepository, EfAttemptRepository>();
-        services.AddScoped<ILessonQueries, LessonQueries>();
         services.AddScoped<IAnswerKeyQueries, AnswerKeyQueries>();
+        services.AddScoped<IAttemptQueries, AttemptQueries>();
+        services.AddScoped<IReadingQueries, ReadingQueries>();
+        services.AddScoped<ILessonQueries, LessonQueries>();
 
         return services;
     }
