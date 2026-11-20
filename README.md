@@ -34,6 +34,7 @@ Tests live in `tests/`: unit, architecture, and integration (Testcontainers).
 | [docs/adr/](docs/adr/) | you want the reasoning behind a decision |
 | [docs/implementation-status.md](docs/implementation-status.md) | you want to know what is built and what is not |
 | [infra/README.md](infra/README.md) | you want to deploy, or change Docker/Nginx/CI/CD |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | you are about to branch, commit, or open a PR |
 
 ## Prerequisites
 

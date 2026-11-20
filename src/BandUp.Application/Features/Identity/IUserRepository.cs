@@ -1,4 +1,6 @@
 using BandUp.Application.Abstractions;
+using BandUp.Application.Common;
+using BandUp.Application.Features.Identity.Admin.ListAdminUsers;
 using BandUp.Domain.Identity;
 
 namespace BandUp.Application.Features.Identity;
@@ -16,8 +18,15 @@ public interface IUserRepository : IRepository<User>
 
     Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken);
 
+    Task<PagedResult<AdminUserDto>> ListForAdminAsync(PageRequest page, CancellationToken cancellationToken);
+
+    Task<bool> IsActiveAdminAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>Serializes role changes for the lifetime of the current transaction.</summary>
+    Task LockRoleChangesAsync(CancellationToken cancellationToken);
+
     /// <summary>
     /// Guards AUTH-14: the last admin cannot be demoted.
     /// </summary>
-    Task<int> CountAdminsAsync(CancellationToken cancellationToken);
+    Task<int> CountActiveAdminsAsync(CancellationToken cancellationToken);
 }
