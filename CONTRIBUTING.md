@@ -2,10 +2,14 @@
 
 ## Branching strategy
 
-Trunk-based: `main` is the only long-lived branch and is protected — direct pushes are
-disabled, and merging requires a green CI run and at least one review approval.
+`development` is the active integration branch — all work branches off it and merges back
+into it. `main` stays on the last submitted/released state and only receives a merge from
+`development` at a milestone (end of term), not on every change. Both branches are
+protected: no direct pushes, merging requires a green CI run and at least one review
+approval.
 
-All work happens on a short-lived branch off `main`, named `<type>/<short-description>`:
+All work happens on a short-lived branch off the latest `development`, named
+`<type>/<short-description>`:
 
 | Type | Use it for |
 |---|---|
@@ -16,9 +20,8 @@ All work happens on a short-lived branch off `main`, named `<type>/<short-descri
 
 Examples: `feat/identity-register-login`, `fix/attempt-timezone-bug`, `chore/devops-deployment`.
 
-Branch from the latest `main`, keep it focused on one card, and open a pull request back into
-`main` as soon as there is something reviewable — do not let a branch sit unmerged for more
-than a few days.
+Keep a branch focused on one card and open a pull request back into `development` as soon as
+there is something reviewable — do not let a branch sit unmerged for more than a few days.
 
 ## Commits
 
@@ -28,6 +31,7 @@ as the branch names above, plus `test:`, `refactor:` and `ci:` where they fit be
 
 ## Pull requests
 
+- Base the PR on `development`, not `main`.
 - Link the PR to its Trello card in the description.
 - Describe what changed and why, not just what — the "why" is what a reviewer actually needs.
 - CI (build + test) must pass before merge.

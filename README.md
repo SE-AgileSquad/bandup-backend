@@ -33,6 +33,7 @@ Tests live in `tests/`: unit, architecture, and integration (Testcontainers).
 | [docs/architecture/patterns.md](docs/architecture/patterns.md) | you want to know why a pattern is there, or when not to use it |
 | [docs/adr/](docs/adr/) | you want the reasoning behind a decision |
 | [docs/implementation-status.md](docs/implementation-status.md) | you want to know what is built and what is not |
+| [infra/README.md](infra/README.md) | you want to deploy, or change Docker/Nginx/CI/CD |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | you are about to branch, commit, or open a PR |
 
 ## Prerequisites
@@ -230,9 +231,17 @@ docs/
   how-to-add-a-feature.md Recipe for a new feature
   implementation-status.md  What is built, and what is not
 infra/
-  docker/                 Local dependency stack
-  env/                    Environment file example
+  docker/                 Local dependency stack, and the full production stack
+  env/                    Environment file examples (dev and prod)
+  nginx/                  Reverse-proxy config, served by the prod stack
+  scripts/                Server setup and deploy scripts
 ```
+
+## Deployment
+
+CI (build + test) and CD (build images, deploy over SSH) run in `.github/workflows/`. The full
+production Docker Compose stack, Nginx config and server setup script live under `infra/`. See
+[infra/README.md](infra/README.md) for the one-time server setup and the deploy/rollback steps.
 
 ## Conventions worth knowing
 
