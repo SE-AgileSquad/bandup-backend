@@ -3,7 +3,7 @@
 The state of the foundation and implemented product slices, including verified behavior and
 known limits. The detailed auth contract is in [ADR 0016](adr/0016-refresh-logout-contracts-and-commit-outcomes.md).
 
-Last updated: 2026-11-17.
+Last updated: 2026-11-20.
 
 ## Checkpoints
 
@@ -29,6 +29,12 @@ Release build with zero warnings/errors.
 The final branch verification commands and scope are recorded in
 [the auth acceptance matrix](auth-session-acceptance.md).
 
+Password-recovery phase 1 verification on 2026-11-20: the serial Release build completed
+with zero warnings/errors; **133 unit tests and 11 architecture tests passed**, with no
+failures or skips. Test execution required access outside the sandbox to the runner's
+Windows named pipe. Integration tests were not rerun because Docker's Linux engine was
+unavailable. This does not replace the earlier full refresh/logout acceptance run.
+
 | Project | Covers |
 |---|---|
 | `BandUp.UnitTests` | Pipeline semantics, domain rules, handlers, token issuance/revocation, CAPTCHA adapters and logging |
@@ -44,6 +50,7 @@ The final branch verification commands and scope are recorded in
 | Access revocation | Validated JWT metadata and Redis blacklist enforcement through expiry plus clock skew |
 | Billing signup | Credit account and ledger with the signup grant; `/me` reads the current balance |
 | Auth developer flow | Fake CAPTCHA and Development Swagger header support; [setup guide](auth-local-setup.md) |
+| Password recovery | Phase 1 only: commands, validators, shared password policy, outcomes and error contracts; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Recovery endpoints, challenge storage, quotas and email delivery are not implemented yet |
 
 ## Scenario coverage
 
