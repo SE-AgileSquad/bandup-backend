@@ -152,6 +152,7 @@ public sealed class ExamAttemptTests(BandUpTestEnvironment environment)
 
         afterDeadline.GetProperty("remainingSeconds").GetInt32().ShouldBe(0);
         afterDeadline.GetProperty("isExpired").GetBoolean().ShouldBeTrue();
+        afterDeadline.GetProperty("status").GetString().ShouldBe("Expired");
     }
 
     [Fact]

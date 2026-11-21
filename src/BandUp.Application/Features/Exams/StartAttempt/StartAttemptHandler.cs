@@ -14,7 +14,6 @@ public sealed class StartAttemptHandler(
     ICurrentUser currentUser,
     IAttemptRepository attempts,
     IReadingQueries readingQueries,
-    IAnswerKeyQueries answerKeyQueries,
     IUnitOfWork unitOfWork,
     TimeProvider timeProvider)
     : ICommandHandler<StartAttemptCommand, StartAttemptResult>
@@ -49,13 +48,10 @@ public sealed class StartAttemptHandler(
                     new StartAttemptResult(AttemptStateDto.From(existing, now), false));
             }
 
-            // The old attempt ran out of time and was never submitted. Close it with the answers
-            // it holds, and save that before inserting the new one: the unique index allows only
-            // one in-progress attempt, so the update must reach the database first.
-            IReadOnlyList<ScoringKey> keys =
-                await answerKeyQueries.GetScoringKeysAsync(command.PassageId, cancellationToken);
-
-            existing.Submit([], keys, $"auto-closed-{existing.Id:N}", now);
+            // The old attempt ran out of time and was never submitted, so it records no result.
+            // Close it as expired and save that before inserting the new one: the unique index
+            // allows only one in-progress attempt, so the update must reach the database first.
+            existing.Expire(now);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
 

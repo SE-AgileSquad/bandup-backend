@@ -186,18 +186,129 @@ public sealed class AttemptDomainTests
     }
 
     [Fact]
-    public void Submit_After_Grace_Ignores_The_Final_Answers_And_Records_The_Deadline()
+    public void Submit_After_Grace_Throws_And_Records_No_Result()
     {
         Attempt attempt = NewAttempt();
         attempt.SaveAnswer(_first.QuestionId, "True", Start.AddMinutes(10));
         DateTimeOffset late = Start + Duration + Attempt.SubmissionGrace + TimeSpan.FromSeconds(1);
 
-        attempt.Submit([new SubmittedAnswer(_second.QuestionId, "nests")], Keys, "key-1", late);
+        Should.Throw<DomainException>(() =>
+            attempt.Submit([new SubmittedAnswer(_second.QuestionId, "nests")], Keys, "key-1", late));
 
-        attempt.Status.ShouldBe(AttemptStatus.Submitted);
-        attempt.SubmittedAt.ShouldBe(Start + Duration);
-        attempt.RawScore.ShouldBe(1);
+        attempt.Status.ShouldBe(AttemptStatus.InProgress);
+        attempt.SubmittedAt.ShouldBeNull();
+        attempt.RawScore.ShouldBeNull();
+        attempt.ApproxBand.ShouldBeNull();
         attempt.Answers.Count.ShouldBe(1);
+        attempt.Answers[0].IsCorrect.ShouldBeNull();
+    }
+
+    [Fact]
+    public void EffectiveStatus_Turns_Expired_Only_After_The_Deadline_Plus_Grace()
+    {
+        Attempt attempt = NewAttempt();
+        DateTimeOffset graceEnds = Start + Duration + Attempt.SubmissionGrace;
+
+        attempt.EffectiveStatus(Start.AddMinutes(5)).ShouldBe(AttemptStatus.InProgress);
+        attempt.EffectiveStatus(Start + Duration).ShouldBe(AttemptStatus.InProgress);
+        attempt.EffectiveStatus(graceEnds).ShouldBe(AttemptStatus.InProgress);
+        attempt.EffectiveStatus(graceEnds + TimeSpan.FromSeconds(1)).ShouldBe(AttemptStatus.Expired);
+
+        // Reading the state never changes what is stored.
+        attempt.Status.ShouldBe(AttemptStatus.InProgress);
+    }
+
+    [Fact]
+    public void Expire_After_Grace_Closes_The_Attempt_Without_A_Score()
+    {
+        Attempt attempt = NewAttempt();
+        attempt.SaveAnswer(_first.QuestionId, "True", Start.AddMinutes(10));
+        DateTimeOffset late = Start + Duration + Attempt.SubmissionGrace + TimeSpan.FromSeconds(1);
+
+        attempt.Expire(late);
+
+        attempt.Status.ShouldBe(AttemptStatus.Expired);
+        attempt.RawScore.ShouldBeNull();
+        attempt.TotalQuestions.ShouldBeNull();
+        attempt.ApproxBand.ShouldBeNull();
+        attempt.SubmittedAt.ShouldBeNull();
+        attempt.RemainingAt(late).ShouldBe(TimeSpan.Zero);
+        attempt.CanAcceptAnswers(late).ShouldBeFalse();
+        attempt.EffectiveStatus(late).ShouldBe(AttemptStatus.Expired);
+    }
+
+    [Fact]
+    public void Expire_Within_Grace_Throws_Because_The_Learner_Can_Still_Submit()
+    {
+        Attempt attempt = NewAttempt();
+
+        Should.Throw<DomainException>(() => attempt.Expire(Start + Duration + TimeSpan.FromSeconds(5)));
+
+        attempt.Status.ShouldBe(AttemptStatus.InProgress);
+    }
+
+    [Fact]
+    public void Expire_Twice_Is_A_No_Op_And_Expire_After_Submit_Throws()
+    {
+        DateTimeOffset late = Start + Duration + Attempt.SubmissionGrace + TimeSpan.FromSeconds(1);
+        Attempt expired = NewAttempt();
+        expired.Expire(late);
+
+        expired.Expire(late.AddMinutes(1));
+
+        expired.Status.ShouldBe(AttemptStatus.Expired);
+
+        Attempt submitted = NewAttempt();
+        submitted.Submit([], Keys, "key-1", Start.AddMinutes(3));
+
+        Should.Throw<DomainException>(() => submitted.Expire(late));
+        submitted.Status.ShouldBe(AttemptStatus.Submitted);
+    }
+
+    [Fact]
+    public void An_Expired_Attempt_Cannot_Be_Submitted_Or_Answered()
+    {
+        DateTimeOffset late = Start + Duration + Attempt.SubmissionGrace + TimeSpan.FromSeconds(1);
+        Attempt attempt = NewAttempt();
+        attempt.Expire(late);
+
+        Should.Throw<DomainException>(() => attempt.Submit([], Keys, "key-1", late));
+        Should.Throw<DomainException>(() => attempt.SaveAnswer(_first.QuestionId, "True", late));
+        attempt.Status.ShouldBe(AttemptStatus.Expired);
+    }
+
+    [Fact]
+    public void Submit_Records_The_Approximate_Band_From_The_Score()
+    {
+        Attempt perfect = NewAttempt();
+        perfect.Submit(
+            [
+                new SubmittedAnswer(_first.QuestionId, "True"),
+                new SubmittedAnswer(_second.QuestionId, "nests"),
+                new SubmittedAnswer(_third.QuestionId, "Not Given"),
+            ],
+            Keys,
+            "key-1",
+            Start.AddMinutes(10));
+
+        perfect.RawScore.ShouldBe(3);
+        perfect.ApproxBand.ShouldBe(9.0m);
+
+        // Two of three scales to 27 of 40, which the table puts at 6.5.
+        Attempt twoOfThree = NewAttempt();
+        twoOfThree.Submit(
+            [new SubmittedAnswer(_first.QuestionId, "True"), new SubmittedAnswer(_second.QuestionId, "nests")],
+            Keys,
+            "key-1",
+            Start.AddMinutes(10));
+
+        twoOfThree.RawScore.ShouldBe(2);
+        twoOfThree.ApproxBand.ShouldBe(6.5m);
+
+        Attempt none = NewAttempt();
+        none.Submit([], Keys, "key-1", Start.AddMinutes(10));
+
+        none.ApproxBand.ShouldBe(0.0m);
     }
 
     [Fact]

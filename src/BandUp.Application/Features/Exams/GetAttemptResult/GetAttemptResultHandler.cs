@@ -7,13 +7,16 @@ namespace BandUp.Application.Features.Exams.GetAttemptResult;
 
 /// <summary>
 /// The result of a submitted attempt, with the answer key revealed. Refused while the attempt
-/// is still open, so the key can never be read mid-exam.
+/// is still open, so the key can never be read mid-exam. An attempt that ran out of time has no
+/// result and says so, rather than looking like one that is merely not submitted yet.
 /// </summary>
 public sealed class GetAttemptResultHandler(
     ICurrentUser currentUser,
     IAttemptRepository attempts,
     IAnswerKeyQueries answerKeyQueries,
-    ILessonQueries lessonQueries)
+    ILessonQueries lessonQueries,
+    IAttemptQueries attemptQueries,
+    TimeProvider timeProvider)
     : IQueryHandler<GetAttemptResultQuery, AttemptResultDto>
 {
     public async Task<Result<AttemptResultDto>> HandleAsync(
@@ -34,10 +37,12 @@ public sealed class GetAttemptResultHandler(
 
         if (attempt.Status != AttemptStatus.Submitted)
         {
-            return Result<AttemptResultDto>.Failure(ExamErrors.AttemptNotSubmitted());
+            return attempt.EffectiveStatus(timeProvider.GetUtcNow()) == AttemptStatus.Expired
+                ? Result<AttemptResultDto>.Failure(ExamErrors.AttemptExpired())
+                : Result<AttemptResultDto>.Failure(ExamErrors.AttemptNotSubmitted());
         }
 
-        AttemptResultBuilder resultBuilder = new(answerKeyQueries, lessonQueries);
+        AttemptResultBuilder resultBuilder = new(answerKeyQueries, lessonQueries, attemptQueries);
 
         return Result<AttemptResultDto>.Success(await resultBuilder.BuildAsync(attempt, cancellationToken));
     }

@@ -23,6 +23,8 @@ public sealed class EndpointCoverageTests(BandUpTestEnvironment environment)
     [InlineData("GET", "/api/lessons")]
     [InlineData("GET", "/api/lessons/00000000-0000-0000-0000-000000000001")]
     [InlineData("POST", "/api/attempts")]
+    [InlineData("GET", "/api/attempts")]
+    [InlineData("GET", "/api/attempts/summary")]
     [InlineData("GET", "/api/attempts/00000000-0000-0000-0000-000000000001")]
     [InlineData("PUT", "/api/attempts/00000000-0000-0000-0000-000000000001/answers/00000000-0000-0000-0000-000000000002")]
     [InlineData("POST", "/api/attempts/00000000-0000-0000-0000-000000000001/submit")]

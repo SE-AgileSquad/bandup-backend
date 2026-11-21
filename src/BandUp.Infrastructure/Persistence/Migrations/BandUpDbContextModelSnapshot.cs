@@ -283,6 +283,11 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<decimal?>("ApproxBand")
+                        .HasPrecision(2, 1)
+                        .HasColumnType("numeric(2,1)")
+                        .HasColumnName("approx_band");
+
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("timestamptz")
                         .HasColumnName("expires_at");
@@ -342,7 +347,9 @@ namespace BandUp.Infrastructure.Persistence.Migrations
 
                     b.ToTable("attempts", "exams", t =>
                         {
-                            t.HasCheckConstraint("attempts_status_check", "status IN ('InProgress', 'Submitted')");
+                            t.HasCheckConstraint("attempts_approx_band_check", "approx_band IS NULL OR (approx_band >= 0 AND approx_band <= 9)");
+
+                            t.HasCheckConstraint("attempts_status_check", "status IN ('InProgress', 'Submitted', 'Expired')");
                         });
                 });
 
