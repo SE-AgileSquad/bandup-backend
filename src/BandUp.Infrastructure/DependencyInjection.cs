@@ -1,4 +1,7 @@
 using BandUp.Application.Abstractions;
+using BandUp.Application.Features.Vocabulary;
+using BandUp.Application.Features.Content.Admin;
+using BandUp.Application.Features.Learning.Admin;
 using BandUp.Application.Features.Billing;
 using BandUp.Application.Features.Exams;
 using BandUp.Application.Features.Identity;
@@ -146,6 +149,9 @@ public static class DependencyInjection
         services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
 
         services.AddScoped<IUserRepository, EfUserRepository>();
+        services.AddScoped<IVocabularyStore, EfVocabularyStore>();
+        services.AddScoped<IAdminPassageStore, EfAdminPassageStore>();
+        services.AddScoped<IAdminLessonStore, EfAdminLessonStore>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
         services.AddScoped<ICreditAccountRepository, EfCreditAccountRepository>();
         services.AddScoped<ICreditLedgerRepository, EfCreditLedgerRepository>();

@@ -20,6 +20,7 @@ Last updated: 2026-10-25.
 | C8 | Local dependency stack, env example, reserved folders | **Done** |
 | C9 | Testcontainers integration tests | **Done** |
 | C10 | ADRs, patterns guide, architecture, feature recipe, run instructions | **Done** |
+| C11 | Dockerfiles, production compose stack, Nginx, CI/CD, server setup script | **Done** |
 
 ## Test suite
 
@@ -93,6 +94,27 @@ can be moved without editing the file. See the README section "Ports that cannot
 
 ## Not in this repository, by design
 
-Frontend, Dockerfiles for the two applications, the production compose stack, Nginx, CI/CD and
-deployment. The `infra/nginx/`, `infra/scripts/` and `.github/workflows/` folders exist only as
-reserved placeholders.
+The frontend's source (a separate repository, SE-AgileSquad/BandUpFront). Its built image is
+referenced by tag (`FRONTEND_IMAGE`) in `docker-compose.prod.yml` and served by Nginx at `/`,
+the same way `API_IMAGE`/`WORKER_IMAGE` are — the frontend repo's own CI/CD builds and pushes
+that image.
+
+## DevOps step (C11)
+
+| Piece | Where |
+|---|---|
+| Dockerfiles (api, worker), multi-stage, non-root user | `src/BandUp.Api/Dockerfile`, `src/BandUp.Worker/Dockerfile` |
+| Production stack: api, worker, db, redis, rabbitmq, nginx, certbot | `infra/docker/docker-compose.prod.yml` |
+| Private network; only Nginx publishes 80/443 | same file |
+| Persistent volumes for db/redis/rabbitmq, surviving `up`/`down`/redeploy | same file |
+| Nginx reverse proxy, HTTP→HTTPS redirect, Let's Encrypt renewal | `infra/nginx/` |
+| CI: build + test on push/PR to `main` | `.github/workflows/ci.yml` |
+| CD: build+push images, SSH deploy, only after green CI | `.github/workflows/cd.yml` |
+| Server setup: sudo user, key-only SSH, Docker, UFW | `infra/scripts/setup-server.sh` |
+| Deploy/rollback steps | `infra/scripts/deploy.sh`, documented in `infra/README.md` |
+
+Not yet verified against a real VPS in this checkpoint: the setup script and deploy script are
+written and reviewed, but running them end-to-end against a live server, the four CD secrets,
+and branch protection are one-time manual steps for whoever holds server/GitHub admin access —
+see `infra/README.md`. A failed-deployment rollback drill and a redeploy-preserves-data check
+(both required by S1-12) still need to be run and recorded once the server exists.
