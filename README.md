@@ -8,7 +8,7 @@ the Domain and Application layers, without EF Core, ASP.NET, Redis or RabbitMQ d
 Architecture tests enforce those boundaries and the direction of project references.
 
 This repository includes the foundation, the System reference slice, cookie-based Identity
-registration/login/profile/refresh/logout, local email-code password recovery, and signup
+registration/login/profile/refresh/logout, email-code password recovery with local/Resend delivery, and signup
 credit accounts in Billing.
 
 ## What is here
@@ -139,6 +139,8 @@ dotnet user-secrets set 'Captcha:Provider' 'Fake' --project src/BandUp.Api
 For recovery in Swagger, enable the optional `recovery` Docker Compose profile and select
 `Email:Provider=Mailpit`; [the local setup guide](docs/auth-local-setup.md#6-test-forgotten-password-recovery-with-a-local-inbox)
 contains the exact commands and walkthrough. No external email account is needed locally.
+For real email delivery, select `Email:Provider=Resend`, configure the API key and sender in
+API user secrets, and follow [the complete Resend/Swagger walkthrough](docs/auth-local-setup.md#7-use-resend-and-a-real-inbox-in-swagger).
 
 The fake provider accepts `fake-captcha-token` on register/login. The Worker needs neither
 the signing key nor the recovery key. In Development, `Auth:RequireSecureCookies=false`

@@ -68,7 +68,7 @@ Additional cases verify JSON/credential validation, CSRF with either session coo
 mapping/outage, connection IP versus untrusted forwarding/body input, save/commit rollback
 without cookie changes or email, sensitive-data absence in logs, API startup validation,
 Worker startup without a recovery key, and OpenAPI request/response metadata. The real email
-provider and real inbox remain phase 6; no production delivery is claimed here.
+Resend adapter is covered separately below; no production inbox delivery is claimed here.
 
 Recovery phase 5 verification on 2026-11-22 passed **464 tests** (222 unit, 11 architecture,
 231 integration), zero failed/skipped, and a serial Release build with zero warnings/errors.
@@ -81,6 +81,22 @@ dotnet test --project tests/BandUp.ArchitectureTests/BandUp.ArchitectureTests.cs
 dotnet test --project tests/BandUp.IntegrationTests/BandUp.IntegrationTests.csproj -c Release --no-build --no-restore
 docker compose --env-file infra/env/dev.env.example -f infra/docker/docker-compose.dev.yml --profile recovery config --quiet
 ```
+
+Phase 6 adds `ResendEmailSenderTests` and `ResendRecoveryTests`: provider selection,
+credential/sender validation, HTTPS payload/authentication, redirect/header policy,
+submission-id checks, provider rejection, transport errors, timeout/cancellation and
+sanitized logging. The integration cases run the public recovery flow with the Resend
+adapter and a fake HTTP transport; they also prove a provider rejection preserves the
+generic acknowledgement and committed challenge. Tests do not contact Resend. Complete
+live acceptance using [the Resend Swagger setup](auth-local-setup.md#7-use-resend-and-a-real-inbox-in-swagger)
+after configuring your own key and sender. Native browser interaction and actual inbox
+delivery have not been automated.
+
+Resend adapter verification on 2026-11-22 passed **499 tests** (252 unit, 11 architecture,
+236 integration), zero failed/skipped, with a Release build producing zero warnings/errors.
+The same serial build and three project-level test commands above were used. Docker Desktop
+28.3.2 was available. No live provider credentials, real recipients or developer database
+were used; live delivery is explicitly unverified until the developer completes setup.
 
 - The client must share refresh work and coordinate logout across components/tabs. If refresh
   wins first and logout presents the old cookies, the new session survives. This is verified

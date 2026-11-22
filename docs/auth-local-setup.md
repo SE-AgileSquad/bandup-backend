@@ -277,4 +277,162 @@ normal expiry (default 15 minutes plus up to 30 seconds of validation skew). Pas
 Email delivery is asynchronous and best-effort. A `202` is an acknowledgement, not proof of
 delivery. If Mailpit is unavailable, the committed request still gets the same response;
 restore the inbox and request another code after the cooldown. Starting Mailpit later does
-not replay failed deliveries. Real email-provider setup and real-inbox acceptance are phase 6.
+not replay failed deliveries. For real delivery through Resend, continue with section 7.
+
+## 7. Use Resend and a real inbox in Swagger
+
+Run the PowerShell commands below from the repository root. Keep your existing database,
+Redis, RabbitMQ, `Auth:SigningKey` and `PasswordReset:CodeProtectionKey` secrets. Do not clear
+the stores or regenerate working keys. If setting up from scratch, finish sections 1–3 first.
+The API's outbound connection to Resend uses HTTPS even when Swagger runs on local HTTP.
+The frontend, standalone Worker and Mailpit are not needed for this flow.
+
+### Choose the sender and recipient
+
+- For a first test without a verified domain, use `onboarding@resend.dev` as the sender.
+  The recipient must be the email address associated with your Resend account. Register
+  that same real address in BandUp; a Mailpit test account at `example.com` will not work.
+- To send recovery codes to other users, add and verify a domain you control in Resend and
+  choose a sender on that exact verified domain, for example `no-reply@your-domain.com`.
+  Domain verification requires the DNS records supplied by Resend. A personal Gmail address
+  is not a substitute for a verified sending domain.
+- Create/use a Resend key with sending permission for the selected sender/domain. This
+  application only sends email; it does not need permissions to administer your account.
+
+These restrictions come from [Resend's test-domain documentation](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain).
+See also [API key management](https://resend.com/docs/dashboard/api-keys/introduction) and
+[the email submission API](https://resend.com/docs/api-reference/emails/send-email).
+
+### Set API user secrets
+
+Enter the actual key at the hidden prompt; it is not written into this script or the repo:
+
+```powershell
+$bandupResendKey = Read-Host 'Resend API key' -AsSecureString
+try {
+    dotnet user-secrets set 'Email:ResendApiKey' ([System.Net.NetworkCredential]::new('', $bandupResendKey).Password) --project src/BandUp.Api
+}
+finally {
+    $bandupResendKey.Dispose()
+    Remove-Variable bandupResendKey
+}
+dotnet user-secrets set 'Email:Provider' 'Resend' --project src/BandUp.Api
+dotnet user-secrets set 'Email:FromEmail' 'onboarding@resend.dev' --project src/BandUp.Api
+dotnet user-secrets set 'Email:FromName' 'BandUp' --project src/BandUp.Api
+dotnet user-secrets set 'PasswordReset:RateLimitProvider' 'Redis' --project src/BandUp.Api
+dotnet user-secrets set 'Captcha:Provider' 'Fake' --project src/BandUp.Api
+dotnet user-secrets set 'Auth:RequireSecureCookies' 'false' --project src/BandUp.Api
+dotnet user-secrets set 'Swagger:Enabled' 'true' --project src/BandUp.Api
+```
+
+For a verified domain, replace the `Email:FromEmail` value with your real sender instead.
+`Email:ResendApiKey` authenticates email submission; `PasswordReset:CodeProtectionKey`
+protects stored OTPs; `Auth:SigningKey` signs access JWTs. Keep these three keys independent.
+Never put the Resend key in Swagger, frontend code, request JSON or `dev.env`. The Worker
+does not need these new email secrets. Restart the API after changing settings.
+
+Startup checks the selected provider, key format, sender and timeout settings. It cannot
+verify that the key is active or the domain is verified; Resend checks those when sending.
+
+### Start and test
+
+```powershell
+docker info
+docker compose --env-file infra/env/dev.env -f infra/docker/docker-compose.dev.yml up -d --wait
+dotnet run --project src/BandUp.Api --launch-profile http -- --migrate
+dotnet run --project src/BandUp.Api --launch-profile http -- --urls http://localhost:18080
+```
+
+Open `http://localhost:18080/ready`, then `http://localhost:18080/swagger`. Keep one host and
+scheme throughout the walkthrough. Development Swagger supplies the CSRF header for JSON
+mutations; the browser manages the HttpOnly cookies. No bearer token entry is required.
+
+In all JSON below, replace `your-account-email@example.com` with your actual receiving email.
+For the test sender this must be your Resend account email.
+
+1. Register through `POST /api/auth/register` (skip registration if that user already exists):
+
+   ```json
+   {
+     "email": "your-account-email@example.com",
+     "password": "ExamplePass123!",
+     "displayName": "Recovery Tester",
+     "captchaToken": "fake-captcha-token"
+   }
+   ```
+
+   Expect `201`. Existing email returns `409`; continue with that existing account. This
+   flow requires an active account. Registration itself does not send a recovery email.
+
+2. Call `POST /api/auth/login` using the same email, its current password and
+   `captchaToken: "fake-captcha-token"`. Expect `200`, then `GET /api/auth/me` returns `200`.
+   This login is optional for recovery; it makes cookie clearing observable.
+
+3. Call `POST /api/auth/forgot-password`:
+
+   ```json
+   { "email": "your-account-email@example.com" }
+   ```
+
+   Expect generic `202`. Wait for the email in your real inbox (also check spam). The code
+   is generated and protected by BandUp; Resend only transports the email. The raw code is
+   never returned by Swagger/API or persisted in the database.
+
+4. Copy the actual six-digit code into `POST /api/auth/reset-password`:
+
+   ```json
+   {
+     "email": "your-account-email@example.com",
+     "code": "012345",
+     "newPassword": "ChangedPass456!"
+   }
+   ```
+
+   Replace `012345` with the received code, keeping it a string. Submit before its ten-minute
+   expiry. The code and new password are checked in this one endpoint; there is no separate
+   code-verification endpoint. Expect empty `204`, cookie deletion, and a second email
+   confirming the password change. The new password is never sent to Resend.
+
+5. `GET /api/auth/me` now returns `401`. Login with the old password returns
+   `401 INVALID_CREDENTIALS`; login with `ChangedPass456!` returns `200`. `GET /me`, refresh
+   with `{}`, and logout with `{}` then work normally as described in section 4.
+
+6. Reusing the successful code returns `422 INVALID_PASSWORD_RESET_CODE`. A wrong, expired,
+   consumed or exhausted code uses that same response. Five incorrect guesses exhaust a
+   challenge. Request another code through `forgot-password` after the 60-second cooldown,
+   subject to quotas; an admitted replacement invalidates the previous code.
+
+### If the email does not arrive
+
+`202` acknowledges the request; it is not proof of delivery. Delivery runs after commit in
+the API's background worker. A failed send does not undo the saved challenge or reveal the
+recipient/account state through the HTTP response. There is no automatic retry or durable
+outbox; a process restart can lose pending messages. Request a fresh code after cooldown
+once the cause is fixed. Provider acceptance also does not guarantee inbox placement.
+
+| Symptom | Check |
+|---|---|
+| API fails on `Email:ResendApiKey` | Set a `re_...` key in the API user-secret store and restart |
+| API fails on sender configuration | Set `Email:FromEmail`; the `.local` Mailpit sender cannot be used with Resend |
+| No message appears in Resend | Check the selected provider, active BandUp account, cooldown/quotas and sanitized API delivery warnings |
+| Resend reports `401` | The key may be invalid, deleted or inactive |
+| Resend reports `403` | Check domain verification, sender/domain permission and the test sender's account-email-only restriction |
+| Resend reports `429` | Check provider rate limits/quota as well as BandUp's separate recovery quotas |
+| Resend accepts the email but the inbox is empty | Check the recipient, spam folder, delivery/bounce status and sender DNS |
+| Swagger returns `400` with existing cookies | Use same-origin Development Swagger or send `X-Requested-With: bandup` and JSON |
+| Swagger returns `422` during reset | Use the latest code, exact email and a code that is unused, unexpired and not exhausted |
+
+The API logs sanitized failure types; inspect your Resend dashboard for provider details.
+No code/key/provider response body is printed in API logs. Resend's
+[error reference](https://resend.com/docs/api-reference/errors) explains provider statuses.
+
+To return to local Mailpit, keep the key stored and change the selected provider/sender:
+
+```powershell
+dotnet user-secrets set 'Email:Provider' 'Mailpit' --project src/BandUp.Api
+dotnet user-secrets set 'Email:FromEmail' 'no-reply@bandup.local' --project src/BandUp.Api
+```
+
+Start the `recovery` profile from section 6 and restart the API. Selecting `InMemory` instead
+also works offline, but its inbox is accessible only through DI/tests. Automated Resend
+tests use a fake HTTP transport and test credentials; they never send real emails.

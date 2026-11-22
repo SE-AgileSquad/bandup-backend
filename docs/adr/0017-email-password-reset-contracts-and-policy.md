@@ -2,8 +2,9 @@
 
 **Status:** Phases 1–5 implemented: contracts/validation, challenge storage/protection,
 request/resend, atomic quotas, post-commit local email delivery, atomic password-reset
-execution and local HTTP/cookie/Swagger integration. Phase 6 connects the selected real
-email service. Password recovery is available in Swagger with a local Mailpit inbox.
+execution and local HTTP/cookie/Swagger integration. Phase 6 adds the Resend adapter and
+configuration with offline acceptance checks. Live Resend/real-inbox acceptance awaits the
+developer's key and sender setup. Mailpit remains available for local testing.
 
 ## Context
 
@@ -130,7 +131,8 @@ change; it is deliberately not promised by the initial reset contract.
 3. Request/resend use case, atomic quotas and post-commit local email delivery (implemented).
 4. Reset use case, committed rejection state, concurrency and refresh revocation (implemented).
 5. Local HTTP/cookie integration, Swagger/local inbox setup and end-to-end acceptance (implemented).
-6. Real email-provider adapter/configuration and real-inbox acceptance, after provider setup.
+6. Resend adapter/configuration and offline acceptance (implemented); real-inbox acceptance
+   follows the developer's provider setup using the documented Swagger walkthrough.
 
 ## Phase 2 implementation boundaries
 
@@ -304,6 +306,49 @@ validates using the example environment file. Unsupported content types retain t
 empty `415` response. No developer secrets/database or real email service is changed. Native
 browser interaction and production email delivery are not part of these automated checks.
 
+## Phase 6 Resend delivery
+
+- `ResendEmailSender` implements the existing Application `IEmailSender` port using the
+  [Resend HTTPS email API](https://resend.com/docs/api-reference/emails/send-email).
+  Provider selection now accepts `InMemory`, `Mailpit` and `Resend`, case-insensitively.
+  No provider SDK, package, schema, Application handler or Domain change is needed.
+- `Email:ResendApiKey` is required only for Resend. The selected provider validates the key's
+  format and a plain sender address, rejecting the `.local` Mailpit sender. Display names
+  cannot contain control characters. Startup cannot authenticate the key or prove domain
+  verification; the provider enforces those when receiving a send request.
+- The named HTTP client uses the fixed `https://api.resend.com/` endpoint, the existing
+  configurable timeout (default five seconds), no redirects and explicit Authorization
+  header redaction. Each message sends Bearer authentication plus `from`, `to`, `subject`
+  and `text`. Secrets are never part of the JSON payload or user-facing API responses.
+- The adapter requires a successful HTTP response with a non-empty submission id. This is
+  provider acceptance, not a guarantee of inbox delivery. Rejections preserve HTTP status
+  internally but do not parse/echo error bodies. Transport/JSON/timeout errors are sanitized;
+  caller cancellation remains cancellation. The worker still logs only failure types.
+- Delivery uses the existing after-commit bounded in-process queue. There is one HTTP send
+  attempt per queued email, with no automatic retry, outbox or delivery webhook. Provider
+  rejection/timeouts never undo a committed challenge or expose account eligibility in the
+  generic `202`. The developer can diagnose the provider dashboard and request a fresh code
+  after cooldown. API process crashes can still lose pending email.
+- The complete [Resend/Swagger setup](../auth-local-setup.md#7-use-resend-and-a-real-inbox-in-swagger)
+  covers API user secrets, separate JWT/code/email credentials, sender/domain choices,
+  account-only testing with `onboarding@resend.dev`, registration/login/request/reset/login,
+  cookie/CSRF behavior, provider errors and switching back to Mailpit. The standalone Worker
+  is not needed: email delivery runs in the API host. Real mailbox tests are manual so the
+  default suite remains offline and never consumes real provider credentials or quota.
+- Automated checks cover documented payload/authentication, provider selection and startup
+  validation, redirect/header policy, malformed receipts, provider failures, timeout and
+  cancellation. Integration tests select the real adapter with a fake HTTP transport and
+  disposable PostgreSQL, checking the public recovery flow, notification and failure privacy.
+
+### Phase 6 adapter verification
+
+On 2026-11-22, the Release build passed with zero warnings/errors. The unit, architecture and
+integration projects passed 252, 11 and 236 tests respectively (499 total, zero failed/skipped).
+New checks include 30 unit and five integration cases. The Resend HTTP transport is replaced
+in tests; no real credentials or external recipients are used. No developer database or
+user-secret store was changed. Live provider acceptance, domain permissions and inbox
+delivery remain manual checks in the documented Swagger walkthrough after local setup.
+
 ## Consequences
 
 The existing auth endpoints continue to behave as before. Registration now shares its
@@ -314,6 +359,7 @@ phase 2 adds lifecycle, keyed protection, configuration, migration/model and Pos
 locking/concurrency tests. Phase 3 adds the request/resend use case, request timing, atomic
 quotas, transactional email scheduling and local delivery tests. Phase 4 adds atomic reset,
 committed rejection counters, notifications and reset/refresh concurrency checks. Recovery
-HTTP/cookie integration is implemented in phase 5. Real-provider email delivery remains phase 6.
+HTTP/cookie integration is implemented in phase 5. Phase 6 supplies Resend email submission;
+live real-inbox acceptance remains a developer setup check, not an automated delivery claim.
 
 Reference: [OWASP Forgot Password Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html).

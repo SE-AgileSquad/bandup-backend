@@ -77,6 +77,19 @@ access. No developer database, user secrets or real email account were used or m
 Native-browser interaction and production email delivery remain unverified; phase 6 connects
 the selected provider. No migration or new package is needed for this checkpoint.
 
+Password-recovery phase 6 adapter verification on 2026-11-22: Release build completed with
+zero warnings/errors; **252 unit, 11 architecture and 236 integration tests passed (499 total)**,
+with zero failures/skips. Thirty new unit cases cover Resend payload/authentication, provider
+selection, credentials/sender validation, redirect/header policy, receipts, provider failures,
+transport errors, timeout and cancellation. Five integration cases check the public recovery
+flow and notification with the real adapter behind an offline HTTP transport, failure privacy,
+committed challenges after rejection and API startup validation. Docker Desktop 28.3.2 supplied
+disposable dependencies. Tests ran outside the sandbox for Windows pipe access. No real API
+key, recipient, developer database or user secrets were used or changed. Live Resend/domain
+authorization, real-inbox delivery and native-browser acceptance remain manual setup checks.
+No migration, SDK or new package was added. The complete setup is in the Resend section of
+[the local guide](auth-local-setup.md#7-use-resend-and-a-real-inbox-in-swagger).
+
 | Project | Covers |
 |---|---|
 | `BandUp.UnitTests` | Pipeline semantics, domain rules, handlers, token issuance/revocation, CAPTCHA adapters and logging |
@@ -92,7 +105,7 @@ the selected provider. No migration or new package is needed for this checkpoint
 | Access revocation | Validated JWT metadata and Redis blacklist enforcement through expiry plus clock skew |
 | Billing signup | Credit account and ledger with the signup grant; `/me` reads the current balance |
 | Auth developer flow | Fake CAPTCHA and Development Swagger header support; [setup guide](auth-local-setup.md) |
-| Password recovery | Phases 1–5: request/reset HTTP endpoints, challenge protection/storage, atomic quotas, timing, local email delivery, atomic password reset with refresh revocation and cookie clearing; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Swagger/Mailpit setup is documented; phase 6 connects the real email service. |
+| Password recovery | Request/reset HTTP endpoints, protected one-use codes, quotas, timing, atomic password reset/refresh revocation/cookie clearing, and local or Resend email delivery; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Phases 1–6 implementation and offline checks are in place; live Resend/real-inbox acceptance awaits developer configuration. |
 
 ## Scenario coverage
 
@@ -152,7 +165,7 @@ can be moved without editing the file. See the README section "Ports that cannot
 
 | Gap | Impact | Where it closes |
 |---|---|---|
-| Real recovery email provider is not connected | Mailpit captures messages locally; no production inbox delivery is configured | Password-recovery phase 6 |
+| Live Resend/real-inbox acceptance is pending | Adapter and offline HTTP acceptance exist; actual credentials, domain authorization and inbox delivery have not been exercised | Developer setup and Swagger walkthrough in the local setup guide |
 | Sentry is verified only in its disabled state | The enabled path is untested | Deployment step, with a real DSN |
 | SIGTERM specifically is unverified | Windows has no SIGTERM; Ctrl+C exercises the same cancellation path | Deployment step, on Linux |
 | `INF_07` is not tagged `Slow` | It runs with the rest of the suite (~2 s) | When the suite grows enough to need a fast subset |
