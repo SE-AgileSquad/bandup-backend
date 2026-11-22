@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.Security.Claims;
 
 namespace BandUp.Api.Auth;
 
@@ -16,6 +17,7 @@ namespace BandUp.Api.Auth;
 public static class AuthExtensions
 {
     public const string AdminPolicy = "Admin";
+    public const string SuperAdminPolicy = "SuperAdmin";
 
     public static IServiceCollection AddCookieJwtAuthentication(this IServiceCollection services)
     {
@@ -50,13 +52,30 @@ public static class AuthExtensions
                         context.Token = context.Request.Cookies[settings.AccessCookieName];
                         return Task.CompletedTask;
                     },
+                    OnTokenValidated = async context =>
+                    {
+                        string? subject = context.Principal?.FindFirstValue(IdentityClaimTypes.Subject)
+                            ?? context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+                        IUserRepository users = context.HttpContext.RequestServices.GetRequiredService<IUserRepository>();
+                        if (!Guid.TryParse(subject, out Guid userId)
+                            || !await users.IsActiveAsync(userId, context.HttpContext.RequestAborted))
+                        {
+                            context.Fail("The account is no longer active.");
+                        }
+                    },
                 };
             });
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
-        services.AddAuthorization(options => options.AddPolicy(
-            AdminPolicy, policy => policy.RequireAuthenticatedUser().AddRequirements(new ActiveAdminRequirement())));
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy(AdminPolicy,
+                policy => policy.RequireAuthenticatedUser().AddRequirements(new ActiveAdminRequirement()));
+            options.AddPolicy(SuperAdminPolicy,
+                policy => policy.RequireAuthenticatedUser().AddRequirements(new ActiveSuperAdminRequirement()));
+        });
         services.AddScoped<IAuthorizationHandler, ActiveAdminHandler>();
+        services.AddScoped<IAuthorizationHandler, ActiveSuperAdminHandler>();
 
         return services;
     }

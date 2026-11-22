@@ -47,11 +47,17 @@ public sealed class User : Entity
     public void ChangePassword(string passwordHash) => PasswordHash = passwordHash;
 
     /// <summary>
-/// Sets the role. The AUTH-14 guards — cannot demote self, cannot demote the last admin — are
-/// handler rules: they need the caller's identity and a count of admins, neither of which the
-/// entity can see.
-/// </summary>
-public void ChangeRole(Role role) => Role = role;
+    /// The caller and last-super-admin guards belong in Application because they need other users.
+    /// </summary>
+    public void ChangeRole(Role role)
+    {
+        if (!Enum.IsDefined(role))
+        {
+            throw new DomainException("The user role is invalid.");
+        }
 
-public void Deactivate() => IsActive = false;
+        Role = role;
+    }
+
+    public void Deactivate() => IsActive = false;
 }

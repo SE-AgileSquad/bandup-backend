@@ -33,6 +33,7 @@ Tests live in `tests/`: unit, architecture, and integration (Testcontainers).
 | [docs/architecture/patterns.md](docs/architecture/patterns.md) | you want to know why a pattern is there, or when not to use it |
 | [docs/adr/](docs/adr/) | you want the reasoning behind a decision |
 | [docs/implementation-status.md](docs/implementation-status.md) | you want to know what is built and what is not |
+| [docs/admin-users-api.md](docs/admin-users-api.md) | you are connecting the super-admin Users page |
 | [infra/README.md](infra/README.md) | you want to deploy, or change Docker/Nginx/CI/CD |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | you are about to branch, commit, or open a PR |
 
