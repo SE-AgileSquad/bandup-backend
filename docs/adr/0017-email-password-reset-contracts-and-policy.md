@@ -1,9 +1,9 @@
 # 0017 — Email password-reset contracts and policy
 
-**Status:** Phases 1–4 implemented: contracts/validation, challenge storage/protection,
-request/resend, atomic quotas, post-commit local email delivery and atomic password-reset
-execution. Phase 5 adds local HTTP/cookie/Swagger acceptance; phase 6 connects the selected
-real email service. Password recovery is not available in Swagger yet.
+**Status:** Phases 1–5 implemented: contracts/validation, challenge storage/protection,
+request/resend, atomic quotas, post-commit local email delivery, atomic password-reset
+execution and local HTTP/cookie/Swagger integration. Phase 6 connects the selected real
+email service. Password recovery is available in Swagger with a local Mailpit inbox.
 
 ## Context
 
@@ -17,7 +17,7 @@ Domain and Application must remain independent of HTTP, EF Core and email-provid
 
 ## Decision
 
-### Planned HTTP contract
+### HTTP contract
 
 Both routes are anonymous and accept `application/json`. Email is the account identifier;
 an existing access/refresh cookie is not proof that a reset code is valid.
@@ -82,10 +82,10 @@ attempt limit, and while unused/unsuperseded. Generate it with cryptographic ran
   never persist the plaintext code. An unkeyed refresh-token-style SHA-256 hash does not
   adequately protect the small six-digit search space against offline guessing.
 - Use constant-time MAC comparison. Future configuration must fail clearly if the code
-  protection secret or selected real email-provider credentials are missing. Phase 2 adds
-  `PasswordReset:CodeProtectionKey`, validated when code protection is resolved. The existing
-  API/Worker do not resolve it yet; the HTTP phase will enable API startup validation when
-  recovery becomes available. It adds a migration but no new packages.
+  protection secret or selected real email-provider credentials are missing. Phase 2 added
+  `PasswordReset:CodeProtectionKey` and validation when code protection is resolved. Phase 5
+  also enables API startup validation now that recovery is exposed. The Worker does not need
+  the recovery key. Phase 2 added a migration but no new packages.
 - Application uses an email-sender interface. Start with an offline fake/local inbox adapter;
   a production SMTP/API provider supplies delivery later. Email delivery follows challenge
   commit through an explicit post-commit boundary; a failed commit must not send a usable
@@ -129,7 +129,7 @@ change; it is deliberately not promised by the initial reset contract.
 2. Challenge domain/persistence, code protection and adapter contracts (implemented).
 3. Request/resend use case, atomic quotas and post-commit local email delivery (implemented).
 4. Reset use case, committed rejection state, concurrency and refresh revocation (implemented).
-5. Local HTTP/cookie integration, Swagger/local inbox setup and end-to-end acceptance.
+5. Local HTTP/cookie integration, Swagger/local inbox setup and end-to-end acceptance (implemented).
 6. Real email-provider adapter/configuration and real-inbox acceptance, after provider setup.
 
 ## Phase 2 implementation boundaries
@@ -144,7 +144,7 @@ change; it is deliberately not promised by the initial reset contract.
   The key is Base64 encoding at least 32 random bytes, supplied through secrets/environment.
 - `EfPasswordResetChallengeStore` requires Read Committed and locks `identity.users` before
   reading or changing a user's challenges. Lookup returns refreshed, tracked user and latest
-  challenge state, including expired/consumed/invalidated state for the future handler to reject.
+  challenge state, including expired/consumed/invalidated state for the handler to reject.
   Dirty tracked state is rejected rather than silently overwritten.
 - A partial unique index permits only one unconsumed, non-invalidated row per user. Expired
   or exhausted rows still occupy that slot until replacement explicitly invalidates them.
@@ -227,7 +227,7 @@ database or secrets are used or modified by these checks.
 - The handler locks and reads current state through the existing challenge store, then samples
   time and checks usability. A wrong MAC increments the challenge's failed-attempt counter
   only while still usable. Returning a successful `Result` containing `Rejected` lets the
-  pipeline commit that counter; the HTTP phase will map it to generic `422` afterward.
+  pipeline commit that counter; the HTTP endpoint then maps it to generic `422`.
 - On a correct code, the existing password hasher computes the replacement hash. Cancellation
   and expiry are checked again before staging writes because hashing can outlast validity.
   The handler then changes the password, consumes the challenge, invalidates other outstanding
@@ -261,6 +261,49 @@ reset/refresh ordering and post-commit notifications. The successful flow verifi
 old password stops working and the new password can sign in. These checks use disposable
 dependencies and offline email configuration; no real provider or developer database is used.
 
+## Phase 5 HTTP and local acceptance
+
+- The Auth endpoint group exposes anonymous JSON `forgot-password` and `reset-password`
+  routes using thin request DTOs. They dispatch the existing commands and derive client IP
+  from the connection under the host's forwarded-header policy. Body-supplied IP and
+  untrusted forwarding headers do not replace that value.
+- Forgot-password returns `202` with only the generic acknowledgement and no Location,
+  code, challenge id, cookie mutation or account-specific retry hint. Reset maps the
+  committed `Rejected` outcome to generic `422`; it deletes both configured session cookies
+  only for `Completed`, after dispatch/commit, and returns empty `204` without a new session.
+- The existing CSRF guard remains active when either session cookie accompanies recovery.
+  Stale/malformed access cookies do not impose authentication on these anonymous routes.
+  Validation, throttling and infrastructure failures preserve cookies. Shared ProblemDetails
+  include the stable error code and request-id reference; the router's unsupported-media-type
+  response is empty `415`. OpenAPI documents the request DTOs,
+  anonymous contract, success body and `400`/`415`/`422`/`429`/`500` responses as applicable.
+- API startup now validates `PasswordResetSettings`, including the independent Base64 key
+  and selected quota provider. The Infrastructure binding remains lazy for other hosts:
+  the Worker starts without the recovery key. The API's checked-in settings contain only
+  empty secret placeholders and safe offline email defaults.
+- The optional `recovery` Compose profile starts Mailpit v1.27.0 on loopback HTTP port 8025,
+  configurable with `MAILPIT_HTTP_PORT`. SMTP is not published. The local setup guide covers
+  key generation, Mailpit selection, Swagger request/reset/login and delivery limitations.
+  The browser contract includes reset coordination with pending refreshes across tabs.
+- Acceptance checks cover cookie jars over HTTP and HTTPS policy, custom names, old/new
+  login, copied refresh rejection, retained access-token expiry, post-commit notification,
+  uniform account-state responses, committed wrong attempts, CSRF, invalid JSON/credentials,
+  quotas, untrusted IP input, rollback, sanitized logs, startup and OpenAPI. A real local
+  Mailpit/Redis/PostgreSQL flow also exercises the public recovery endpoints.
+- No schema, package or real-provider credential is added. Local email remains asynchronous
+  and best-effort; real email-provider integration and real-inbox acceptance remain phase 6.
+
+### Phase 5 verification
+
+On 2026-11-22, the Release build passed with zero warnings/errors. The unit, architecture and
+integration projects passed 222, 11 and 231 tests respectively (464 total, zero failed/skipped).
+The 50 new HTTP cases exercise the public recovery flow and boundaries listed above. Actual
+local Mailpit delivery is tested together with Redis quotas and PostgreSQL password changes;
+the existing Swagger asset tests also remain green. The optional `recovery` Compose profile
+validates using the example environment file. Unsupported content types retain the router's
+empty `415` response. No developer secrets/database or real email service is changed. Native
+browser interaction and production email delivery are not part of these automated checks.
+
 ## Consequences
 
 The existing auth endpoints continue to behave as before. Registration now shares its
@@ -271,6 +314,6 @@ phase 2 adds lifecycle, keyed protection, configuration, migration/model and Pos
 locking/concurrency tests. Phase 3 adds the request/resend use case, request timing, atomic
 quotas, transactional email scheduling and local delivery tests. Phase 4 adds atomic reset,
 committed rejection counters, notifications and reset/refresh concurrency checks. Recovery
-HTTP/cookie integration and real-provider email delivery remain phases 5 and 6 respectively.
+HTTP/cookie integration is implemented in phase 5. Real-provider email delivery remains phase 6.
 
 Reference: [OWASP Forgot Password Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html).

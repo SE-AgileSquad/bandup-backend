@@ -58,6 +58,30 @@ not wait for the held lock.
 
 ## Contract limits to review
 
+Password-recovery coverage is added in `PasswordRecoveryHttpTests` (AUTH-15). It exercises
+registration/login, generic code requests, reset and cookie deletion, copied refresh rejection,
+old/new password login, code reuse, generic ineligible-state rejection and committed wrong
+attempts. HTTP/HTTPS cookie policy and custom names are checked with cookie jars. Anonymous
+recovery is also exercised through real disposable Mailpit, Redis and PostgreSQL.
+
+Additional cases verify JSON/credential validation, CSRF with either session cookie, quota
+mapping/outage, connection IP versus untrusted forwarding/body input, save/commit rollback
+without cookie changes or email, sensitive-data absence in logs, API startup validation,
+Worker startup without a recovery key, and OpenAPI request/response metadata. The real email
+provider and real inbox remain phase 6; no production delivery is claimed here.
+
+Recovery phase 5 verification on 2026-11-22 passed **464 tests** (222 unit, 11 architecture,
+231 integration), zero failed/skipped, and a serial Release build with zero warnings/errors.
+The exact successful verification commands were:
+
+```powershell
+dotnet build -c Release --no-restore --disable-build-servers -m:1
+dotnet test --project tests/BandUp.UnitTests/BandUp.UnitTests.csproj -c Release --no-build --no-restore
+dotnet test --project tests/BandUp.ArchitectureTests/BandUp.ArchitectureTests.csproj -c Release --no-build --no-restore
+dotnet test --project tests/BandUp.IntegrationTests/BandUp.IntegrationTests.csproj -c Release --no-build --no-restore
+docker compose --env-file infra/env/dev.env.example -f infra/docker/docker-compose.dev.yml --profile recovery config --quiet
+```
+
 - The client must share refresh work and coordinate logout across components/tabs. If refresh
   wins first and logout presents the old cookies, the new session survives. This is verified
   behavior, not a claim that row locks order HTTP cookie writes.

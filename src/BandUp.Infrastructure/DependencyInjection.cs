@@ -79,8 +79,8 @@ public static class DependencyInjection
                 "PasswordReset:CodeProtectionKey must be Base64 encoding at least 32 random bytes.")
             .Validate(settings => ServiceProviders.PasswordResetRateLimit.Contains(settings.RateLimitProvider, StringComparer.OrdinalIgnoreCase),
                 "PasswordReset:RateLimitProvider must be Redis or InMemory.");
-        // Recovery is not exposed yet. Validate on resolution here; the API will enable
-        // startup validation when recovery endpoints are wired in the HTTP phase.
+        // The API opts into startup validation. Other hosts do not require a recovery key
+        // unless they resolve recovery services.
         services.AddSingleton<IPasswordResetCodeProtector, PasswordResetCodeProtector>();
         services.AddSingleton<PasswordResetRateLimitKeys>();
         services.AddSingleton<IPasswordResetRateLimiter>(provider =>
