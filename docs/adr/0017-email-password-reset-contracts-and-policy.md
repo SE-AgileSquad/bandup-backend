@@ -1,8 +1,9 @@
 # 0017 — Email password-reset contracts and policy
 
-**Status:** Phase 1 implemented: Application commands, outcomes, validators and policy values.
-The HTTP routes, challenge entity/store, rate-limit enforcement and email adapters are planned
-in phases 2–5. Password recovery is not available in Swagger yet.
+**Status:** Phases 1–2 implemented: contracts/validation, the challenge lifecycle, PostgreSQL
+mapping/store/migration, code protection and email delivery contracts. Handlers, rate-limit
+enforcement, email adapters and HTTP routes remain in phases 3–5. Password recovery is not
+available in Swagger yet.
 
 ## Context
 
@@ -81,8 +82,10 @@ attempt limit, and while unused/unsuperseded. Generate it with cryptographic ran
   never persist the plaintext code. An unkeyed refresh-token-style SHA-256 hash does not
   adequately protect the small six-digit search space against offline guessing.
 - Use constant-time MAC comparison. Future configuration must fail clearly if the code
-  protection secret or selected real email-provider credentials are missing. This phase
-  does not introduce required configuration, dependencies or migrations.
+  protection secret or selected real email-provider credentials are missing. Phase 2 adds
+  `PasswordReset:CodeProtectionKey`, validated when code protection is resolved. The existing
+  API/Worker do not resolve it yet; the HTTP phase will enable API startup validation when
+  recovery becomes available. It adds a migration but no new packages.
 - Application uses an email-sender interface. Start with an offline fake/local inbox adapter;
   a production SMTP/API provider supplies delivery later. Email delivery follows challenge
   commit through an explicit post-commit boundary; a failed commit must not send a usable
@@ -122,18 +125,49 @@ change; it is deliberately not promised by the initial reset contract.
 
 ## Delivery checkpoints
 
-1. Contracts, validation, errors and documented policy (this change).
-2. Challenge domain/persistence, code protection and adapter contracts.
+1. Contracts, validation, errors and documented policy (implemented).
+2. Challenge domain/persistence, code protection and adapter contracts (implemented).
 3. Request/resend use case, atomic quotas and post-commit email delivery.
 4. Reset use case, committed rejection state, concurrency and refresh revocation.
 5. HTTP/cookie integration, Swagger/local inbox guide and end-to-end acceptance.
 
+## Phase 2 implementation boundaries
+
+- `PasswordResetChallenge` receives timestamps and the attempt limit explicitly. It guards
+  expiry, attempts, one-time consumption and idempotent invalidation without framework or
+  clock dependencies. The caller allocates a version-7 id before computing the MAC.
+- `PasswordResetCodeProtector` generates unbiased six-digit codes with the platform CSPRNG.
+  HMAC-SHA256 covers a versioned purpose, challenge id, user id and code. Verification compares
+  equal-length MAC bytes with the platform's
+  [fixed-time comparison](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.cryptographicoperations.fixedtimeequals?view=net-10.0).
+  The key is Base64 encoding at least 32 random bytes, supplied through secrets/environment.
+- `EfPasswordResetChallengeStore` requires Read Committed and locks `identity.users` before
+  reading or changing a user's challenges. Lookup returns refreshed, tracked user and latest
+  challenge state, including expired/consumed/invalidated state for the future handler to reject.
+  Dirty tracked state is rejected rather than silently overwritten.
+- A partial unique index permits only one unconsumed, non-invalidated row per user. Expired
+  or exhausted rows still occupy that slot until replacement explicitly invalidates them.
+  Replacement invalidates existing rows with a transaction-scoped update before staging the
+  insertion, avoiding dependence on EF's insertion/update ordering. The store never commits.
+- `InvalidateOthersAsync` excludes the challenge being consumed so its pending consumption
+  is preserved. Bulk changes reload clean tracked rows. All changes roll back with the caller's
+  transaction. Never reuse the context's tracked state after a failed/rolled-back request.
+- A CLR `uint Version` is mapped to PostgreSQL's existing
+  [`xmin` system column](https://www.npgsql.org/efcore/modeling/concurrency.html) as an optimistic
+  concurrency backstop. Database constraints enforce MAC shape, lifetimes, attempt bounds
+  and mutually exclusive consumed/invalidated states. Foreign-key deletion cascades with the user.
+- `IEmailSender` and `EmailMessage` describe only in-process post-commit delivery. No sender
+  is registered and no email is sent in phase 2. Offline/real adapters and explicit post-commit
+  orchestration arrive in phase 3; request DTOs, raw codes and bodies are not broker messages.
+
 ## Consequences
 
 The existing auth endpoints continue to behave as before. Registration now shares its
-password validator with recovery, including safe handling of a missing password. Recovery
-contracts can be reviewed before any database or provider work. Phase 1 tests check credential
-boundaries, policy consistency, validator discovery and rejection commit semantics; live
-email delivery, challenge verification and HTTP recovery remain unimplemented.
+password validator with recovery, including safe handling of a missing password. Domain,
+code-protection and storage components can be reviewed independently of the parent branch's
+session implementation. Phase 1 tests check credential boundaries and commit semantics;
+phase 2 adds lifecycle, keyed protection, configuration, migration/model and PostgreSQL
+locking/concurrency tests. Actual recovery handlers, quotas, email delivery and HTTP recovery
+remain unimplemented.
 
 Reference: [OWASP Forgot Password Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html).

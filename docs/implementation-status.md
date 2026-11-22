@@ -3,7 +3,7 @@
 The state of the foundation and implemented product slices, including verified behavior and
 known limits. The detailed auth contract is in [ADR 0016](adr/0016-refresh-logout-contracts-and-commit-outcomes.md).
 
-Last updated: 2026-11-20.
+Last updated: 2026-11-22.
 
 ## Checkpoints
 
@@ -35,6 +35,14 @@ failures or skips. Test execution required access outside the sandbox to the run
 Windows named pipe. Integration tests were not rerun because Docker's Linux engine was
 unavailable. This does not replace the earlier full refresh/logout acceptance run.
 
+Password-recovery phase 2 verification on 2026-11-21: Release build completed with zero
+warnings/errors; **173 unit, 11 architecture and 158 integration tests passed (342 total)**,
+with zero failures/skips. Docker Desktop 28.3.2 was available for the disposable PostgreSQL,
+Redis and RabbitMQ fixtures. The integration run applied the new migration and verified
+replacement rollback, stale-state refresh, shared user locking, unique-index enforcement
+and `xmin` conflict detection. Tests ran outside the sandbox for Windows pipe access.
+The developer's database and user secrets were not changed.
+
 | Project | Covers |
 |---|---|
 | `BandUp.UnitTests` | Pipeline semantics, domain rules, handlers, token issuance/revocation, CAPTCHA adapters and logging |
@@ -50,7 +58,7 @@ unavailable. This does not replace the earlier full refresh/logout acceptance ru
 | Access revocation | Validated JWT metadata and Redis blacklist enforcement through expiry plus clock skew |
 | Billing signup | Credit account and ledger with the signup grant; `/me` reads the current balance |
 | Auth developer flow | Fake CAPTCHA and Development Swagger header support; [setup guide](auth-local-setup.md) |
-| Password recovery | Phase 1 only: commands, validators, shared password policy, outcomes and error contracts; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Recovery endpoints, challenge storage, quotas and email delivery are not implemented yet |
+| Password recovery | Phases 1–2: contracts/validators, challenge lifecycle, PostgreSQL store/migration, keyed code protection and email contracts; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Handlers, quotas, email delivery and endpoints remain unimplemented. |
 
 ## Scenario coverage
 

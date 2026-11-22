@@ -71,6 +71,14 @@ public static class DependencyInjection
         services.AddSingleton<ISessionTokenIssuer, SessionTokenIssuer>();
         services.AddSingleton<IAccessTokenRevocationStore, CachedAccessTokenRevocationStore>();
 
+        services.AddOptions<PasswordResetSettings>()
+            .BindConfiguration(PasswordResetSettings.SectionName)
+            .Validate(settings => PasswordResetCodeProtector.IsValidKey(settings.CodeProtectionKey),
+                "PasswordReset:CodeProtectionKey must be Base64 encoding at least 32 random bytes.");
+        // Recovery is not exposed yet. Validate on resolution here; the API will enable
+        // startup validation when recovery endpoints are wired in the HTTP phase.
+        services.AddSingleton<IPasswordResetCodeProtector, PasswordResetCodeProtector>();
+
         services
             .AddOptions<CaptchaSettings>()
             .BindConfiguration(CaptchaSettings.SectionName)
@@ -143,6 +151,7 @@ public static class DependencyInjection
 
         services.AddScoped<IUserRepository, EfUserRepository>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
+        services.AddScoped<IPasswordResetChallengeStore, EfPasswordResetChallengeStore>();
         services.AddScoped<ICreditAccountRepository, EfCreditAccountRepository>();
         services.AddScoped<ICreditLedgerRepository, EfCreditLedgerRepository>();
 
