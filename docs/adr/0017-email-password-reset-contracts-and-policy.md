@@ -1,9 +1,9 @@
 # 0017 — Email password-reset contracts and policy
 
-**Status:** Phases 1–3 implemented: contracts/validation, the challenge lifecycle, PostgreSQL
-storage, code protection, request/resend handler, atomic quotas and post-commit local email
-delivery. Password-reset execution and HTTP routes remain in phases 4–5. Password recovery
-is not available in Swagger yet. A production delivery provider remains to be selected.
+**Status:** Phases 1–4 implemented: contracts/validation, challenge storage/protection,
+request/resend, atomic quotas, post-commit local email delivery and atomic password-reset
+execution. Phase 5 adds local HTTP/cookie/Swagger acceptance; phase 6 connects the selected
+real email service. Password recovery is not available in Swagger yet.
 
 ## Context
 
@@ -128,8 +128,9 @@ change; it is deliberately not promised by the initial reset contract.
 1. Contracts, validation, errors and documented policy (implemented).
 2. Challenge domain/persistence, code protection and adapter contracts (implemented).
 3. Request/resend use case, atomic quotas and post-commit local email delivery (implemented).
-4. Reset use case, committed rejection state, concurrency and refresh revocation.
-5. HTTP/cookie integration, Swagger/local inbox guide and end-to-end acceptance.
+4. Reset use case, committed rejection state, concurrency and refresh revocation (implemented).
+5. Local HTTP/cookie integration, Swagger/local inbox setup and end-to-end acceptance.
+6. Real email-provider adapter/configuration and real-inbox acceptance, after provider setup.
 
 ## Phase 2 implementation boundaries
 
@@ -180,8 +181,8 @@ change; it is deliberately not promised by the initial reset contract.
   without issuing a code (fail closed). Fixed windows and cooldown survive process restarts.
 - The in-memory quota provider locks both decisions together and uses `TimeProvider` for
   deterministic offline tests. It is process-local and must not substitute for shared Redis
-  quotas in a multi-instance deployment. Verification budgets are implemented for phase 4
-  to call; no reset handler invokes them yet.
+  quotas in a multi-instance deployment. Phase 4's reset handler now consumes the verification
+  budgets before reading account/challenge state.
 - Email identities use trimmed invariant case folding for quota keys. Parsed IPv4-mapped
   IPv6 addresses share their IPv4 bucket; missing/invalid IP uses one unknown-client bucket.
   Email/IP keys are purpose-separated HMACs under the protection secret. Redis keys never
@@ -217,6 +218,49 @@ commit-before-delivery, rollback without email, replacement, real Mailpit captur
 atomic Redis budgets. The shared API fixture pins offline email configuration. No developer
 database or secrets are used or modified by these checks.
 
+## Phase 4 reset execution
+
+- `ResetPasswordHandler` checks the shared verification quotas before looking up an account.
+  Client-IP refusal uses the rate-limit error; account-specific refusal and unknown/inactive,
+  absent, expired, consumed, invalidated or exhausted challenges use the same `Rejected` outcome.
+  No password hashing, session revocation or notification occurs on those rejections.
+- The handler locks and reads current state through the existing challenge store, then samples
+  time and checks usability. A wrong MAC increments the challenge's failed-attempt counter
+  only while still usable. Returning a successful `Result` containing `Rejected` lets the
+  pipeline commit that counter; the HTTP phase will map it to generic `422` afterward.
+- On a correct code, the existing password hasher computes the replacement hash. Cancellation
+  and expiry are checked again before staging writes because hashing can outlast validity.
+  The handler then changes the password, consumes the challenge, invalidates other outstanding
+  challenges while retaining the consumed id, and revokes all owned unrevoked refresh rows,
+  including expired rows, in the same command transaction.
+- The pipeline saves/commits all changes together. Save/commit failure rolls back password,
+  consumption, counters and refresh revocation and discards the notification callback. An
+  infrastructure failure never returns `Completed` or claims that reset succeeded.
+- The password-change notification is scheduled through the existing post-commit queue and
+  contains neither the new password nor the OTP. No session is issued automatically. Users
+  sign in normally with the new password after reset.
+- `ResetPasswordTimingBehavior` applies the same 250 ms minimum around the reset pipeline,
+  including rejection-counter commits. It reduces normal account-state timing differences
+  without promising exact constant duration under load. Shared transaction behavior and
+  existing login/refresh/logout implementations are unchanged.
+- The user-row lock serializes concurrent use of one code: one request can consume it; the
+  next sees the committed consumed state. It also coordinates with refresh: tokens rotated
+  before reset are revoked by reset, and a refresh after reset sees the revoked credential.
+  Already-issued access JWTs retain the existing expiry policy described above.
+- This checkpoint adds Application handlers/behavior and tests, using the existing Domain
+  and Infrastructure contracts. No new schema, package, secret or email-provider account is
+  required. HTTP responses/cookie clearing remain phase 5; real provider delivery is phase 6.
+
+### Phase 4 verification
+
+On 2026-11-22, the Release build passed with zero warnings/errors. The unit, architecture and
+integration projects passed 222, 11 and 181 tests respectively (414 total, zero failed/skipped).
+Tests cover committed wrong-attempt counters, expiry after locking and hashing, generic
+ineligible-state rejection, password/code/session rollback, concurrent code consumption,
+reset/refresh ordering and post-commit notifications. The successful flow verifies that the
+old password stops working and the new password can sign in. These checks use disposable
+dependencies and offline email configuration; no real provider or developer database is used.
+
 ## Consequences
 
 The existing auth endpoints continue to behave as before. Registration now shares its
@@ -225,7 +269,8 @@ code-protection and storage components can be reviewed independently of the pare
 session implementation. Phase 1 tests check credential boundaries and commit semantics;
 phase 2 adds lifecycle, keyed protection, configuration, migration/model and PostgreSQL
 locking/concurrency tests. Phase 3 adds the request/resend use case, request timing, atomic
-quotas, transactional email scheduling and local delivery tests. Reset execution, recovery
-HTTP/cookie integration and production email delivery remain later work.
+quotas, transactional email scheduling and local delivery tests. Phase 4 adds atomic reset,
+committed rejection counters, notifications and reset/refresh concurrency checks. Recovery
+HTTP/cookie integration and real-provider email delivery remain phases 5 and 6 respectively.
 
 Reference: [OWASP Forgot Password Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html).

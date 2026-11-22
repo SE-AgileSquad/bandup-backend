@@ -53,6 +53,17 @@ The shared API fixture explicitly selects offline email defaults, independently 
 email settings. Tests ran outside the sandbox for Windows pipe access. No developer database,
 user secrets or production email provider were changed/configured. No new migration is needed.
 
+Password-recovery phase 4 verification on 2026-11-22: Release build completed with zero
+warnings/errors; **222 unit, 11 architecture and 181 integration tests passed (414 total)**,
+with zero failures/skips. Tests verify committed incorrect-guess counters, expiry after lock
+waits and hashing, one-use code consumption, atomic password/session changes, save/commit
+rollback without notification, concurrent resets and reset/refresh serialization. Successful
+reset is also checked against old/new password login and post-commit notification state.
+Docker Desktop 28.3.2 supplied disposable dependencies. Tests ran outside the sandbox for
+Windows pipe access. No developer database, user secrets or real email service were changed.
+Recovery endpoints and cookie clearing remain phase 5, using local email; phase 6 connects
+the real email service. No migration or new package is needed for this checkpoint.
+
 | Project | Covers |
 |---|---|
 | `BandUp.UnitTests` | Pipeline semantics, domain rules, handlers, token issuance/revocation, CAPTCHA adapters and logging |
@@ -68,7 +79,7 @@ user secrets or production email provider were changed/configured. No new migrat
 | Access revocation | Validated JWT metadata and Redis blacklist enforcement through expiry plus clock skew |
 | Billing signup | Credit account and ledger with the signup grant; `/me` reads the current balance |
 | Auth developer flow | Fake CAPTCHA and Development Swagger header support; [setup guide](auth-local-setup.md) |
-| Password recovery | Phases 1–3: contracts, challenge/storage/protection, request/resend handler, atomic quotas, response timing and post-commit local/offline email delivery; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Reset execution, HTTP endpoints and production email delivery remain later work. |
+| Password recovery | Phases 1–4: contracts, challenge/storage/protection, request/resend, atomic quotas, timing, local email delivery and atomic reset with refresh revocation; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Phase 5 is local HTTP/Swagger acceptance; phase 6 connects the real email service. |
 
 ## Scenario coverage
 
