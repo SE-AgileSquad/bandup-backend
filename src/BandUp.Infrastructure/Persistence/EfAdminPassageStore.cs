@@ -77,7 +77,9 @@ public sealed class EfAdminPassageStore(BandUpDbContext context) : IAdminPassage
             passage.Id, passage.Title, passage.Body, passage.SourceNote, passage.UsageBasis,
             passage.Status, passage.Version, passage.PreviousVersionId, passage.CreatedBy, passage.PublishedAt,
             passage.Questions.OrderBy(question => question.SortOrder).ThenBy(question => question.Id)
-                .Select(ToDetails).ToArray(), passage.UpdatedAt);
+                .Select(ToDetails).ToArray(), passage.UpdatedAt,
+            passage.Status != PassageStatus.Draft && !await HasRevisionAsync(id, cancellationToken),
+            PassagePublicationReadiness.FromIssues(passage.GetPublicationIssues()));
     }
 
     public async Task<QuestionDetails?> GetQuestionAsync(

@@ -20,7 +20,13 @@ public sealed record PassageDetails(
     Guid CreatedBy,
     DateTimeOffset? PublishedAt,
     IReadOnlyList<QuestionDetails> Questions,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt,
+    bool CanCreateRevision,
+    PassagePublicationReadiness PublishReadiness)
+{
+    public bool IsReadOnly => Status != PassageStatus.Draft;
+    public int WordCount => Body.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+}
 
 public sealed record QuestionDetails(
     Guid Id,
@@ -36,4 +42,7 @@ public sealed record QuestionDetails(
     AnswerKeyDetails? AnswerKey);
 
 public sealed record AnswerKeyDetails(
-    string CorrectAnswer, IReadOnlyList<string> AcceptedVariants, Guid? VerifiedBy, DateTimeOffset? VerifiedAt);
+    string CorrectAnswer, IReadOnlyList<string> AcceptedVariants, Guid? VerifiedBy, DateTimeOffset? VerifiedAt)
+{
+    public bool IsVerified => VerifiedBy.HasValue && VerifiedAt.HasValue;
+}

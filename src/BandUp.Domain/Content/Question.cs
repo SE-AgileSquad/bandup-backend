@@ -50,22 +50,28 @@ public sealed class Question : Entity
     }
 
     public void SetExplanation(
-        string explanation,
+        string? explanation,
         string? evidenceSentence = null,
         string? misleadingSentence = null,
         string? unspecifiedPart = null)
     {
         EnsureDraft();
 
-        if (string.IsNullOrWhiteSpace(explanation))
+        explanation = NormalizeOptional(explanation);
+        evidenceSentence = NormalizeOptional(evidenceSentence);
+        misleadingSentence = NormalizeOptional(misleadingSentence);
+        unspecifiedPart = NormalizeOptional(unspecifiedPart);
+
+        if (Explanation == explanation && EvidenceSentence == evidenceSentence
+            && MisleadingSentence == misleadingSentence && UnspecifiedPart == unspecifiedPart)
         {
-            throw new DomainException("A question requires an explanation before publication.");
+            return;
         }
 
         Explanation = explanation;
-        EvidenceSentence = string.IsNullOrWhiteSpace(evidenceSentence) ? null : evidenceSentence;
-        MisleadingSentence = string.IsNullOrWhiteSpace(misleadingSentence) ? null : misleadingSentence;
-        UnspecifiedPart = string.IsNullOrWhiteSpace(unspecifiedPart) ? null : unspecifiedPart;
+        EvidenceSentence = evidenceSentence;
+        MisleadingSentence = misleadingSentence;
+        UnspecifiedPart = unspecifiedPart;
         InvalidateAnswerKeyVerification();
     }
 
@@ -86,46 +92,79 @@ public sealed class Question : Entity
     {
         EnsureDraft();
 
-        if (AnswerKey is null)
+        PublicationIssue? issue = GetPublicationIssues(requireVerification: false).FirstOrDefault();
+        if (issue is not null)
         {
-            throw new DomainException("A question must have an answer key before it can be verified.");
+            throw new DomainException(issue.Message);
         }
 
-        EnsureExplanationIsComplete(AnswerKey);
-        AnswerKey.Verify(verifiedBy, verifiedAt);
+        AnswerKey!.Verify(verifiedBy, verifiedAt);
     }
 
-    internal void EnsurePublishable()
+    public void ClearAnswerKey()
     {
         EnsureDraft();
-
-        if (AnswerKey is not { IsVerified: true })
-        {
-            throw new DomainException("A question requires a verified answer key and an explanation to be published.");
-        }
+        AnswerKey = null;
     }
 
-    private void EnsureExplanationIsComplete(AnswerKey answerKey)
+    public void ClearAnswerKeyVerification()
     {
+        EnsureDraft();
+        InvalidateAnswerKeyVerification();
+    }
+
+    public IReadOnlyList<PublicationIssue> GetPublicationIssues(bool requireVerification = true)
+    {
+        List<PublicationIssue> issues = [];
+        if (Status != QuestionStatus.Draft)
+        {
+            issues.Add(new("status", "Only a draft question can be published or verified.", Id));
+        }
+
+        if (AnswerKey is null)
+        {
+            issues.Add(new("answerKey.correctAnswer", "An answer key is required.", Id));
+        }
+
         if (string.IsNullOrWhiteSpace(Explanation))
         {
-            throw new DomainException("A question requires an explanation before verification.");
+            issues.Add(new("explanation", "An explanation is required.", Id));
         }
 
-        if (answerKey.IsNotGiven(Type))
+        if (AnswerKey is not null)
         {
-            if (UnspecifiedPart is null || EvidenceSentence is not null)
+            if (AnswerKey.IsNotGiven(Type))
             {
-                throw new DomainException("A Not Given question requires the unspecified part in place of evidence.");
+                if (UnspecifiedPart is null)
+                {
+                    issues.Add(new("unspecifiedPart", "Identify the information not stated in the passage for Not Given.", Id));
+                }
+
+                if (EvidenceSentence is not null)
+                {
+                    issues.Add(new("evidenceSentence", "Use the unspecified part instead of evidence for Not Given.", Id));
+                }
             }
+            else
+            {
+                if (EvidenceSentence is null)
+                {
+                    issues.Add(new("evidenceSentence", "An evidence sentence from the passage is required.", Id));
+                }
 
-            return;
+                if (UnspecifiedPart is not null)
+                {
+                    issues.Add(new("unspecifiedPart", "The unspecified part is only allowed for Not Given.", Id));
+                }
+            }
         }
 
-        if (EvidenceSentence is null || UnspecifiedPart is not null)
+        if (requireVerification && AnswerKey is not { IsVerified: true })
         {
-            throw new DomainException("A question other than Not Given requires evidence and no unspecified part.");
+            issues.Add(new("answerKey.isVerified", "The answer, explanation and evidence must be checked before publication.", Id));
         }
+
+        return issues;
     }
 
     internal void MarkPublished() => Status = QuestionStatus.Published;
@@ -149,6 +188,8 @@ public sealed class Question : Entity
 
         return copy;
     }
+
+    private static string? NormalizeOptional(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
     private void EnsureDraft()
     {

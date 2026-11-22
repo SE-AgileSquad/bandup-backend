@@ -21,6 +21,19 @@ public sealed class PublishPassageHandler(IAdminPassageStore store, TimeProvider
             return Result<bool>.Success(true);
         }
 
+        Dictionary<string, string[]> errors = new(
+            PassagePublicationReadiness.FromIssues(passage.GetPublicationIssues()).Errors, StringComparer.Ordinal);
+        if (!command.ReviewConfirmed)
+        {
+            errors["reviewConfirmed"] = ["Confirm that you have rechecked the original text and every answer."];
+        }
+
+        if (errors.Count > 0)
+        {
+            return Result<bool>.Failure(Error.Conflict("Publication is blocked. Resolve the reported issues and confirm the final review.")
+                with { ValidationErrors = errors });
+        }
+
         try
         {
             passage.Publish(clock.GetUtcNow());
