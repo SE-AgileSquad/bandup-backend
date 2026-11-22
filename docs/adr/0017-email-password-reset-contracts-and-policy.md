@@ -1,9 +1,9 @@
 # 0017 — Email password-reset contracts and policy
 
-**Status:** Phases 1–2 implemented: contracts/validation, the challenge lifecycle, PostgreSQL
-mapping/store/migration, code protection and email delivery contracts. Handlers, rate-limit
-enforcement, email adapters and HTTP routes remain in phases 3–5. Password recovery is not
-available in Swagger yet.
+**Status:** Phases 1–3 implemented: contracts/validation, the challenge lifecycle, PostgreSQL
+storage, code protection, request/resend handler, atomic quotas and post-commit local email
+delivery. Password-reset execution and HTTP routes remain in phases 4–5. Password recovery
+is not available in Swagger yet. A production delivery provider remains to be selected.
 
 ## Context
 
@@ -51,8 +51,8 @@ an existing access/refresh cookie is not proof that a reset code is valid.
 
 ### Initial limits
 
-`PasswordResetPolicy` is the source of these initial values. Later adapters must implement
-atomic checks/increments; the cache's current read-then-write abstraction is not sufficient.
+`PasswordResetPolicy` is the source of these values. Phase 3 implements atomic Redis quotas
+and a process-local in-memory fake; the generic cache's read-then-write API is not used.
 
 | Rule | Value |
 |---|---|
@@ -60,7 +60,7 @@ atomic checks/increments; the cache's current read-then-write abstraction is not
 | Incorrect attempts per challenge | 5; the fifth wrong guess exhausts the challenge |
 | Resend cooldown per email | 60 seconds |
 | Accepted send requests per email | 5 per hour |
-| Accepted send requests per client IP | 20 per hour |
+| Request attempts admitted by the client-IP gate | 20 per hour, including subsequent email-specific suppression |
 | Verification attempts per email, across replacements | 20 per 15 minutes |
 | Verification attempts per client IP, across emails/replacements | 100 per 15 minutes |
 
@@ -127,7 +127,7 @@ change; it is deliberately not promised by the initial reset contract.
 
 1. Contracts, validation, errors and documented policy (implemented).
 2. Challenge domain/persistence, code protection and adapter contracts (implemented).
-3. Request/resend use case, atomic quotas and post-commit email delivery.
+3. Request/resend use case, atomic quotas and post-commit local email delivery (implemented).
 4. Reset use case, committed rejection state, concurrency and refresh revocation.
 5. HTTP/cookie integration, Swagger/local inbox guide and end-to-end acceptance.
 
@@ -157,8 +157,65 @@ change; it is deliberately not promised by the initial reset contract.
   concurrency backstop. Database constraints enforce MAC shape, lifetimes, attempt bounds
   and mutually exclusive consumed/invalidated states. Foreign-key deletion cascades with the user.
 - `IEmailSender` and `EmailMessage` describe only in-process post-commit delivery. No sender
-  is registered and no email is sent in phase 2. Offline/real adapters and explicit post-commit
-  orchestration arrive in phase 3; request DTOs, raw codes and bodies are not broker messages.
+  was registered in phase 2. Phase 3 supplies the local/offline adapters and explicit
+  post-commit orchestration; request DTOs, raw codes and bodies are not broker messages.
+
+## Phase 3 request and delivery behavior
+
+- `ForgotPasswordHandler` obtains a quota decision before looking up the account. Client-wide
+  refusal returns the existing rate-limit error; account-specific refusal returns the generic
+  acknowledgement. Permitted unknown/inactive accounts perform equivalent code/MAC work but
+  create no challenge or email. Only an eligible user receives a replacement challenge.
+- After the locked lookup, time is sampled for issuance. The latest challenge's creation
+  time provides a database cooldown backstop even if quota state was lost. A suppressed
+  request preserves the existing challenge; a permitted replacement uses the phase 2 store.
+- The forgot-password-specific outer behavior applies a 250 ms minimum to the whole command
+  pipeline, including commit and local queue handoff. Common logging/validation/transaction
+  ordering is unchanged. Padding reduces normal timing differences; network load and lock
+  contention can exceed the floor, so exact constant response time is not promised.
+- Redis uses one Lua operation and Redis server time for each decision. IP capacity is
+  acquired first, including requests later suppressed per email. Email capacity is consumed
+  only when its gate admits a request. Unknown/inactive accounts count identically; quota
+  consumption is not refunded after database or delivery failure. Redis errors propagate
+  without issuing a code (fail closed). Fixed windows and cooldown survive process restarts.
+- The in-memory quota provider locks both decisions together and uses `TimeProvider` for
+  deterministic offline tests. It is process-local and must not substitute for shared Redis
+  quotas in a multi-instance deployment. Verification budgets are implemented for phase 4
+  to call; no reset handler invokes them yet.
+- Email identities use trimmed invariant case folding for quota keys. Parsed IPv4-mapped
+  IPv6 addresses share their IPv4 bucket; missing/invalid IP uses one unknown-client bucket.
+  Email/IP keys are purpose-separated HMACs under the protection secret. Redis keys never
+  contain the raw identifiers. Rotating this key also changes quota identities.
+- `IPostCommitEmailQueue` schedules a callback in the existing scoped commit buffer. The
+  callback hands the email to a bounded process-local channel only after commit. Rollback,
+  save failure and commit failure discard the callback. No code content reaches RabbitMQ.
+- A background worker sends queued emails independently of the HTTP response, skips expired
+  code emails, and logs sanitized delivery failure types without addresses, body content or
+  provider exception text. It continues after failures. Queue saturation is logged and drops
+  the email while preserving the generic acknowledgement. This operation only acknowledges
+  the request and does not claim a password was changed.
+- This is best-effort delivery, not an outbox. A process crash can lose queued email. The
+  user can request another code after cooldown, subject to the same quotas. Provider network
+  latency and failures do not expose account eligibility through the request response.
+- `Email:Provider=InMemory` is the safe offline default and keeps a bounded inbox accessible
+  through DI only. `Email:Provider=Mailpit` uses its
+  [HTTP send API](https://mailpit.axllent.org/docs/api-v1/) at `Email:MailpitBaseUrl`
+  (default `http://localhost:8025/`). This local adapter permits loopback HTTP(S) endpoints,
+  disallows URL credentials/query/fragment, and does not follow redirects. It expects an
+  unauthenticated local Mailpit inbox; a production SMTP/API adapter is a separate choice.
+- Email options also define sender name/address, a 5-second HTTP timeout and capacity 256.
+  Options validate on host start. Code protection and quota options still validate on
+  resolution until recovery HTTP startup validation is enabled in phase 5. No new packages,
+  migrations, production configuration or review-only Markdown files are added in phase 3.
+
+### Phase 3 verification
+
+On 2026-11-22, the Release build passed with zero warnings/errors. The unit, architecture and
+integration projects passed 202, 11 and 168 tests respectively (381 total, zero failed/skipped).
+Integration tests use disposable PostgreSQL/Redis/RabbitMQ and Mailpit v1.27.0. They verify
+commit-before-delivery, rollback without email, replacement, real Mailpit capture and shared
+atomic Redis budgets. The shared API fixture pins offline email configuration. No developer
+database or secrets are used or modified by these checks.
 
 ## Consequences
 
@@ -167,7 +224,8 @@ password validator with recovery, including safe handling of a missing password.
 code-protection and storage components can be reviewed independently of the parent branch's
 session implementation. Phase 1 tests check credential boundaries and commit semantics;
 phase 2 adds lifecycle, keyed protection, configuration, migration/model and PostgreSQL
-locking/concurrency tests. Actual recovery handlers, quotas, email delivery and HTTP recovery
-remain unimplemented.
+locking/concurrency tests. Phase 3 adds the request/resend use case, request timing, atomic
+quotas, transactional email scheduling and local delivery tests. Reset execution, recovery
+HTTP/cookie integration and production email delivery remain later work.
 
 Reference: [OWASP Forgot Password Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html).

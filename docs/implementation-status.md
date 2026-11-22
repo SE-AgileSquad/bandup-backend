@@ -43,6 +43,16 @@ replacement rollback, stale-state refresh, shared user locking, unique-index enf
 and `xmin` conflict detection. Tests ran outside the sandbox for Windows pipe access.
 The developer's database and user secrets were not changed.
 
+Password-recovery phase 3 verification on 2026-11-22: Release build completed with zero
+warnings/errors; **202 unit, 11 architecture and 168 integration tests passed (381 total)**,
+with zero failures/skips. Docker Desktop 28.3.2 supplied the disposable dependencies, including
+`axllent/mailpit:v1.27.0` for real local HTTP email capture. Tests verify request/resend,
+unknown/inactive acknowledgement, save/commit failure rollback without delivery, atomic
+Redis quotas, response timing, expiry handling and sanitized background-delivery failures.
+The shared API fixture explicitly selects offline email defaults, independently of developer
+email settings. Tests ran outside the sandbox for Windows pipe access. No developer database,
+user secrets or production email provider were changed/configured. No new migration is needed.
+
 | Project | Covers |
 |---|---|
 | `BandUp.UnitTests` | Pipeline semantics, domain rules, handlers, token issuance/revocation, CAPTCHA adapters and logging |
@@ -58,7 +68,7 @@ The developer's database and user secrets were not changed.
 | Access revocation | Validated JWT metadata and Redis blacklist enforcement through expiry plus clock skew |
 | Billing signup | Credit account and ledger with the signup grant; `/me` reads the current balance |
 | Auth developer flow | Fake CAPTCHA and Development Swagger header support; [setup guide](auth-local-setup.md) |
-| Password recovery | Phases 1–2: contracts/validators, challenge lifecycle, PostgreSQL store/migration, keyed code protection and email contracts; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Handlers, quotas, email delivery and endpoints remain unimplemented. |
+| Password recovery | Phases 1–3: contracts, challenge/storage/protection, request/resend handler, atomic quotas, response timing and post-commit local/offline email delivery; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Reset execution, HTTP endpoints and production email delivery remain later work. |
 
 ## Scenario coverage
 

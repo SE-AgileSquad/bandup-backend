@@ -2,6 +2,7 @@ using BandUp.Application.Abstractions;
 using BandUp.Application.Features.Billing;
 using BandUp.Application.Features.Identity;
 using BandUp.Infrastructure.Caching;
+using BandUp.Infrastructure.Email;
 using BandUp.Infrastructure.Configuration;
 using BandUp.Infrastructure.Hosting;
 using BandUp.Infrastructure.Messaging;
@@ -35,6 +36,7 @@ public static class DependencyInjection
         services.AddCaching(configuration);
         services.AddMessaging(configuration);
         services.AddSecurity(configuration);
+        services.AddEmailDelivery();
         services.AddBilling();
 
         return services;
@@ -74,10 +76,18 @@ public static class DependencyInjection
         services.AddOptions<PasswordResetSettings>()
             .BindConfiguration(PasswordResetSettings.SectionName)
             .Validate(settings => PasswordResetCodeProtector.IsValidKey(settings.CodeProtectionKey),
-                "PasswordReset:CodeProtectionKey must be Base64 encoding at least 32 random bytes.");
+                "PasswordReset:CodeProtectionKey must be Base64 encoding at least 32 random bytes.")
+            .Validate(settings => ServiceProviders.PasswordResetRateLimit.Contains(settings.RateLimitProvider, StringComparer.OrdinalIgnoreCase),
+                "PasswordReset:RateLimitProvider must be Redis or InMemory.");
         // Recovery is not exposed yet. Validate on resolution here; the API will enable
         // startup validation when recovery endpoints are wired in the HTTP phase.
         services.AddSingleton<IPasswordResetCodeProtector, PasswordResetCodeProtector>();
+        services.AddSingleton<PasswordResetRateLimitKeys>();
+        services.AddSingleton<IPasswordResetRateLimiter>(provider =>
+            string.Equals(provider.GetRequiredService<IOptions<PasswordResetSettings>>().Value.RateLimitProvider,
+                ServiceProviders.InMemory, StringComparison.OrdinalIgnoreCase)
+                ? new InMemoryPasswordResetRateLimiter(provider.GetRequiredService<PasswordResetRateLimitKeys>(), provider.GetRequiredService<TimeProvider>())
+                : new RedisPasswordResetRateLimiter(provider.GetRequiredService<IConnectionMultiplexer>(), provider.GetRequiredService<PasswordResetRateLimitKeys>()));
 
         services
             .AddOptions<CaptchaSettings>()

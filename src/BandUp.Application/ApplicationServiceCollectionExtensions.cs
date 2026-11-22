@@ -1,6 +1,7 @@
 using System.Reflection;
 using BandUp.Application.Abstractions;
 using BandUp.Application.Behaviors;
+using BandUp.Application.Features.Identity.ForgotPassword;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,6 +15,7 @@ public static class ApplicationServiceCollectionExtensions
 
         RegisterHandlers(services, assembly);
         RegisterValidators(services, assembly);
+        services.AddScoped<IPipelineBehavior<ForgotPasswordCommand, ForgotPasswordOutcome>, ForgotPasswordTimingBehavior>();
         services.AddPipelineBehaviors();
         services.AddScoped<IDispatcher, Dispatcher>();
 

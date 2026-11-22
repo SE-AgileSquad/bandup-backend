@@ -73,6 +73,11 @@ public sealed class BandUpTestEnvironment : IAsyncLifetime
         ["Auth:SigningKey"] = "integration-test-signing-key-not-for-any-real-use-0123456789",
         ["Auth:RequireSecureCookies"] = "false",
         ["Captcha:Provider"] = "Fake",
+        ["Email:Provider"] = "InMemory",
+        ["Email:FromEmail"] = "tests@bandup.local",
+        ["Email:FromName"] = "BandUp tests",
+        ["Email:QueueCapacity"] = "256",
+        ["Email:TimeoutSeconds"] = "5",
     };
 
     public async ValueTask InitializeAsync()

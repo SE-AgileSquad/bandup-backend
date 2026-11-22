@@ -6,4 +6,6 @@ public sealed class PasswordResetSettings
 
     /// <summary>Base64-encoded random key of at least 32 bytes, independent of Auth:SigningKey.</summary>
     public string? CodeProtectionKey { get; set; }
+
+    public string RateLimitProvider { get; set; } = ServiceProviders.Redis;
 }
