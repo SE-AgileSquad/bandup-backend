@@ -15,6 +15,7 @@ using BandUp.Application.Features.Content.Admin.PublishPassage;
 using BandUp.Application.Features.Content.Admin.SetQuestionAnswerKey;
 using BandUp.Application.Features.Content.Admin.SetQuestionExplanation;
 using BandUp.Application.Features.Content.Admin.VerifyQuestionAnswerKey;
+using BandUp.Domain.Content;
 
 namespace BandUp.Api.Endpoints.Admin;
 
@@ -32,11 +33,14 @@ public sealed class AdminPassageEndpoints : IEndpointGroup
         RouteGroupBuilder questions = passage.MapGroup("/questions");
         RouteGroupBuilder question = questions.MapGroup("/{questionId:guid}");
 
-        passages.MapGet("", (int? page, int? pageSize, IDispatcher dispatcher, HttpContext http) =>
+        passages.MapGet("", (int? page, int? pageSize, PassageStatus? status, string? search,
+                IDispatcher dispatcher, HttpContext http) =>
                 AdminContentHttp.ReadAsync<ListAdminPassagesQuery, PagedResult<PassageSummary>>(
-                    new ListAdminPassagesQuery(new PageRequest(page ?? 1, pageSize ?? PageRequest.DefaultPageSize)),
+                    new ListAdminPassagesQuery(new PageRequest(page ?? 1, pageSize ?? PageRequest.DefaultPageSize),
+                        status, search),
                     dispatcher, http))
-            .WithName("Admin_ListPassages").Produces<PagedResult<PassageSummary>>();
+            .WithName("Admin_ListPassages").Produces<PagedResult<PassageSummary>>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
 
         passages.MapPost("", (PassageInput input, IDispatcher dispatcher, HttpContext http) =>
                 AdminContentHttp.CreatedAsync(new CreatePassageCommand(input), ResourcePath, dispatcher, http))

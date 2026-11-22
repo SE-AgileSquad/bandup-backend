@@ -4,7 +4,9 @@ namespace BandUp.Application.Features.Content.Admin;
 
 public sealed record PassageInput(string Title, string Body, string SourceNote, string UsageBasis);
 
-public sealed record PassageSummary(Guid Id, string Title, PassageStatus Status, int Version, DateTimeOffset? PublishedAt);
+public sealed record PassageSummary(
+    Guid Id, string Title, PassageStatus Status, int Version, DateTimeOffset? PublishedAt,
+    int QuestionCount, DateTimeOffset? UpdatedAt);
 
 public sealed record PassageDetails(
     Guid Id,
@@ -17,7 +19,8 @@ public sealed record PassageDetails(
     Guid? PreviousVersionId,
     Guid CreatedBy,
     DateTimeOffset? PublishedAt,
-    IReadOnlyList<QuestionDetails> Questions);
+    IReadOnlyList<QuestionDetails> Questions,
+    DateTimeOffset? UpdatedAt);
 
 public sealed record QuestionDetails(
     Guid Id,

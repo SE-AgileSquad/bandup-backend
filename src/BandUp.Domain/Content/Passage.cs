@@ -19,6 +19,7 @@ public sealed class Passage : Entity
     public Guid? PreviousVersionId { get; private set; }
     public Guid CreatedBy { get; private set; }
     public DateTimeOffset? PublishedAt { get; private set; }
+    public DateTimeOffset? UpdatedAt { get; private set; }
     public IReadOnlyList<Question> Questions => _questions.AsReadOnly();
 
     public static Passage CreateDraft(
