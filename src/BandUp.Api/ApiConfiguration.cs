@@ -152,14 +152,11 @@ public static class ApiConfiguration
         app.UseMiddleware<RequestIdMiddleware>();
         app.UseMiddleware<RequestLoggingMiddleware>();
         app.UseCors(CorsPolicy);
-
-        // After CORS so preflights are answered, before the endpoints so a rejected request
-        // never reaches a handler.
-        app.UseMiddleware<CsrfMiddleware>();
-
-        // Keep challenges inside the request-id/error envelope and after the CSRF guard.
         app.UseAuthentication();
         app.UseAuthorization();
+
+        // Keep preflights and authorization ahead of CSRF checks for state-changing requests.
+        app.UseMiddleware<CsrfMiddleware>();
 
         IOptions<SwaggerSettings> swagger = app.Services.GetRequiredService<IOptions<SwaggerSettings>>();
 

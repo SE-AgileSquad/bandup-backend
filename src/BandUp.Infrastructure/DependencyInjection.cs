@@ -1,12 +1,21 @@
 using BandUp.Application.Abstractions;
+using BandUp.Application.Features.Vocabulary;
+using BandUp.Application.Features.Content.Admin;
+using BandUp.Application.Features.Learning.Admin;
 using BandUp.Application.Features.Billing;
+using BandUp.Application.Features.Exams;
 using BandUp.Application.Features.Identity;
+using BandUp.Application.Features.Learning;
+using BandUp.Application.Features.Reading;
 using BandUp.Infrastructure.Caching;
 using BandUp.Infrastructure.Configuration;
 using BandUp.Infrastructure.Hosting;
 using BandUp.Infrastructure.Messaging;
 using BandUp.Infrastructure.Security;
 using BandUp.Infrastructure.Persistence;
+using BandUp.Infrastructure.Persistence.Queries.Exams;
+using BandUp.Infrastructure.Persistence.Queries.Learning;
+using BandUp.Infrastructure.Persistence.Queries.Reading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -142,9 +151,18 @@ public static class DependencyInjection
         services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
 
         services.AddScoped<IUserRepository, EfUserRepository>();
+        services.AddScoped<IVocabularyStore, EfVocabularyStore>();
+        services.AddScoped<IAdminPassageStore, EfAdminPassageStore>();
+        services.AddScoped<IAdminLessonStore, EfAdminLessonStore>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
         services.AddScoped<ICreditAccountRepository, EfCreditAccountRepository>();
         services.AddScoped<ICreditLedgerRepository, EfCreditLedgerRepository>();
+
+        services.AddScoped<IAttemptRepository, EfAttemptRepository>();
+        services.AddScoped<IAnswerKeyQueries, AnswerKeyQueries>();
+        services.AddScoped<IAttemptQueries, AttemptQueries>();
+        services.AddScoped<IReadingQueries, ReadingQueries>();
+        services.AddScoped<ILessonQueries, LessonQueries>();
 
         return services;
     }

@@ -158,7 +158,9 @@ public sealed class LayeringTests
             .Descendants()
             .Where(element => element.Name.LocalName == "ProjectReference")
             .Select(element => element.Attribute("Include")?.Value ?? string.Empty)
-            .Select(include => Path.GetFileNameWithoutExtension(include))
+            // csproj files use "\" regardless of OS; normalize before taking the file name
+            // so this resolves the same way on Linux as on Windows.
+            .Select(include => Path.GetFileNameWithoutExtension(include.Replace('\\', '/')))
             .Where(name => name.Length > 0)
             .ToArray();
 

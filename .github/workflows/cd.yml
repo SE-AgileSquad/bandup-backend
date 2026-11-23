@@ -1,0 +1,89 @@
+name: CD
+
+# Builds and pushes the api/worker images, then deploys to the VPS over SSH. Only runs
+# after CI's build-and-test job has passed on main, so a red build never reaches the
+# server. On deploy failure the server is left on whatever images it last pulled
+# successfully — "rollback" here means re-running this workflow for a previous green
+# commit, which redeploys the last working images; see infra/README.md.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main, development]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  API_IMAGE: ghcr.io/${{ github.repository }}-api
+  WORKER_IMAGE: ghcr.io/${{ github.repository }}-worker
+
+jobs:
+  build-and-push:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      api-image: ${{ steps.tags.outputs.api }}
+      worker-image: ${{ steps.tags.outputs.worker }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - id: tags
+        run: |
+          sha="${{ github.event.workflow_run.head_sha }}"
+          echo "api=${{ env.API_IMAGE }}:$sha" >> "$GITHUB_OUTPUT"
+          echo "worker=${{ env.WORKER_IMAGE }}:$sha" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/BandUp.Api/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.api }}
+            ${{ env.API_IMAGE }}:latest
+
+      - name: Build and push worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/BandUp.Worker/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.worker }}
+            ${{ env.WORKER_IMAGE }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.workflow_run.head_branch == 'main' && 'production' || 'staging' }}
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            cd ${{ secrets.DEPLOY_PATH }}
+            git fetch origin ${{ github.event.workflow_run.head_branch }}
+            git checkout origin/${{ github.event.workflow_run.head_branch }}
+            export API_IMAGE=${{ needs.build-and-push.outputs.api-image }}
+            export WORKER_IMAGE=${{ needs.build-and-push.outputs.worker-image }}
+            ./infra/scripts/deploy.sh
