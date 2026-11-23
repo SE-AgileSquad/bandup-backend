@@ -14,7 +14,7 @@ public sealed class LoginHandler(
     IUserRepository userRepository,
     IPasswordHasher passwordHasher,
     ICaptchaVerifier captchaVerifier,
-    ITokenService tokenService,
+    ISessionTokenIssuer sessionTokenIssuer,
     IRefreshTokenStore refreshTokenStore,
     TimeProvider timeProvider) : ICommandHandler<LoginCommand, LoginResult>
 {
@@ -53,24 +53,16 @@ public sealed class LoginHandler(
 
         user.RecordLogin(now);
 
-        AccessToken accessToken = tokenService.CreateAccessToken(user.Id, user.Role.ToString(), now);
-
-        string rawRefreshToken = tokenService.GenerateRefreshToken();
-        RefreshToken refreshToken = RefreshToken.Issue(
-            user.Id,
-            tokenService.HashRefreshToken(rawRefreshToken),
-            now,
-            now.AddDays(7),
-            command.UserAgent is { Length: > 0 } agent ? agent[..Math.Min(agent.Length, 200)] : null);
-
-        await refreshTokenStore.AddAsync(refreshToken, cancellationToken);
+        IssuedSession session = sessionTokenIssuer.Issue(user, now, command.UserAgent);
+        await refreshTokenStore.AddAsync(session.RefreshToken, cancellationToken);
 
         return Result<LoginResult>.Success(new LoginResult(
             user.Id,
             user.Email,
             user.DisplayName,
             user.Role.ToString(),
-            accessToken,
-            rawRefreshToken));
+            session.AccessToken,
+            session.RawRefreshToken,
+            session.RefreshToken.ExpiresAt));
     }
 }

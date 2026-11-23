@@ -20,7 +20,7 @@ public sealed class LoginTimingTests
     private static readonly DateTimeOffset Now = new(2026, 11, 9, 8, 0, 0, TimeSpan.Zero);
 
     private readonly ICaptchaVerifier _captcha = Substitute.For<ICaptchaVerifier>();
-    private readonly ITokenService _tokens = Substitute.For<ITokenService>();
+    private readonly ISessionTokenIssuer _tokens = Substitute.For<ISessionTokenIssuer>();
     private readonly IRefreshTokenStore _refreshTokens = Substitute.For<IRefreshTokenStore>();
     private readonly FakeTimeProvider _time = new(Now);
 

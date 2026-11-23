@@ -77,6 +77,8 @@ public static class DependencyInjection
         // Validation runs when ITokenService is first resolved, not at startup. Only the API
         // issues tokens, so only the API fails fast; the Worker never resolves this service.
         services.AddSingleton<ITokenService, JwtTokenService>();
+        services.AddSingleton<ISessionTokenIssuer, SessionTokenIssuer>();
+        services.AddSingleton<IAccessTokenRevocationStore, CachedAccessTokenRevocationStore>();
 
         services
             .AddOptions<CaptchaSettings>()
