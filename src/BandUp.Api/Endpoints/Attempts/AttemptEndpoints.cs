@@ -2,6 +2,7 @@ using BandUp.Api.Errors;
 using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
 using BandUp.Application.Features.Exams;
+using BandUp.Application.Features.Exams.CloseDueAttempts;
 using BandUp.Application.Features.Exams.GetAttempt;
 using BandUp.Application.Features.Exams.GetAttemptResult;
 using BandUp.Application.Features.Exams.GetPassageAttemptSummaries;
@@ -106,7 +107,8 @@ public sealed class AttemptEndpoints : IEndpointGroup
 
     /// <summary>
     /// The learner's test history: submitted attempts only, newest first. A sitting that ran out
-    /// of time recorded no result and is not listed.
+    /// of time is listed once the server has graded its saved answers at the deadline; one with
+    /// nothing saved recorded no result and is not listed.
     /// </summary>
     private static async Task<IResult> ListAttemptHistoryAsync(
         IDispatcher dispatcher,
@@ -115,6 +117,13 @@ public sealed class AttemptEndpoints : IEndpointGroup
         int page = 1,
         int pageSize = PageRequest.DefaultPageSize)
     {
+        Result<int> closing = await CloseDueAttemptsAsync(dispatcher, null, cancellationToken);
+
+        if (closing.IsFailure)
+        {
+            return closing.ToProblem(httpContext);
+        }
+
         Result<PagedResult<AttemptHistoryItemDto>> result =
             await dispatcher.QueryAsync<ListAttemptHistoryQuery, PagedResult<AttemptHistoryItemDto>>(
                 new ListAttemptHistoryQuery(page, pageSize),
@@ -135,6 +144,13 @@ public sealed class AttemptEndpoints : IEndpointGroup
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
+        Result<int> closing = await CloseDueAttemptsAsync(dispatcher, null, cancellationToken);
+
+        if (closing.IsFailure)
+        {
+            return closing.ToProblem(httpContext);
+        }
+
         Result<IReadOnlyList<PassageAttemptSummaryDto>> result =
             await dispatcher.QueryAsync<GetPassageAttemptSummariesQuery, IReadOnlyList<PassageAttemptSummaryDto>>(
                 new GetPassageAttemptSummariesQuery(),
@@ -151,6 +167,13 @@ public sealed class AttemptEndpoints : IEndpointGroup
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
+        Result<int> closing = await CloseDueAttemptsAsync(dispatcher, attemptId, cancellationToken);
+
+        if (closing.IsFailure)
+        {
+            return closing.ToProblem(httpContext);
+        }
+
         Result<AttemptStateDto> result = await dispatcher.QueryAsync<GetAttemptQuery, AttemptStateDto>(
             new GetAttemptQuery(attemptId),
             cancellationToken);
@@ -206,6 +229,13 @@ public sealed class AttemptEndpoints : IEndpointGroup
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
+        Result<int> closing = await CloseDueAttemptsAsync(dispatcher, attemptId, cancellationToken);
+
+        if (closing.IsFailure)
+        {
+            return closing.ToProblem(httpContext);
+        }
+
         Result<AttemptResultDto> result = await dispatcher.QueryAsync<GetAttemptResultQuery, AttemptResultDto>(
             new GetAttemptResultQuery(attemptId),
             cancellationToken);
@@ -214,6 +244,17 @@ public sealed class AttemptEndpoints : IEndpointGroup
             ? TypedResults.Ok(result.Value)
             : result.ToProblem(httpContext);
     }
+
+    /// <summary>
+    /// Closes the caller's sittings whose time ran out before something reads them, so a finished
+    /// sitting is never shown as running and its saved answers are graded as of the deadline.
+    /// Safe to repeat: a sitting that is already closed is left alone.
+    /// </summary>
+    private static Task<Result<int>> CloseDueAttemptsAsync(
+        IDispatcher dispatcher,
+        Guid? attemptId,
+        CancellationToken cancellationToken) =>
+        dispatcher.SendAsync<CloseDueAttemptsCommand, int>(new CloseDueAttemptsCommand(attemptId), cancellationToken);
 
     public sealed record SubmitAnswerRequest(Guid QuestionId, string? SelectedAnswer);
 

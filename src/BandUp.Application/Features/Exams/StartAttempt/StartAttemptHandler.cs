@@ -13,6 +13,7 @@ namespace BandUp.Application.Features.Exams.StartAttempt;
 public sealed class StartAttemptHandler(
     ICurrentUser currentUser,
     IAttemptRepository attempts,
+    IAnswerKeyQueries answerKeyQueries,
     IReadingQueries readingQueries,
     IUnitOfWork unitOfWork,
     TimeProvider timeProvider)
@@ -48,10 +49,11 @@ public sealed class StartAttemptHandler(
                     new StartAttemptResult(AttemptStateDto.From(existing, now), false));
             }
 
-            // The old attempt ran out of time and was never submitted, so it records no result.
-            // Close it as expired and save that before inserting the new one: the unique index
-            // allows only one in-progress attempt, so the update must reach the database first.
-            existing.Expire(now);
+            // The old attempt ran out of time and was never submitted. Close it first: the answers
+            // it had saved are graded as of its deadline (or it expires if it had none). The
+            // unique index allows only one in-progress attempt, so this must reach the database
+            // before the new one is inserted.
+            await AttemptClosing.CloseAsync(existing, answerKeyQueries, now, null, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
