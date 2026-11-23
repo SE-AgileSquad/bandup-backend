@@ -6,36 +6,39 @@ using Microsoft.AspNetCore.Http;
 namespace BandUp.Api.Auth;
 
 /// <summary>
-/// The only place the auth cookies are written. Register and login produce tokens; this
-/// service puts them in the two HttpOnly cookies the spec fixes (AUTH-06). Centralised so
-/// the attributes never drift between endpoints, and so tests have one seam to inspect.
+/// Owns cookie names, issuance and deletion for login, refresh and logout. Deletion uses the
+/// same host/path scope and security policy as issuance.
 /// </summary>
 public sealed class AuthCookieService(IOptions<AuthSettings> options)
 {
+    public string? ReadRefreshToken(HttpRequest request) => request.Cookies[options.Value.RefreshCookieName];
+
     public void SetSessionCookies(
         IResponseCookies cookies,
         AccessToken accessToken,
-        string rawRefreshToken)
+        string rawRefreshToken,
+        DateTimeOffset refreshTokenExpiresAt)
     {
         AuthSettings settings = options.Value;
 
-        CookieOptions access = new()
-        {
-            HttpOnly = true,
-            Secure = settings.RequireSecureCookies,
-            SameSite = SameSiteMode.Strict,
-            IsEssential = true,
-        };
-
-        CookieOptions refresh = new()
-        {
-            HttpOnly = true,
-            Secure = settings.RequireSecureCookies,
-            SameSite = SameSiteMode.Strict,
-            IsEssential = true,
-        };
-
-        cookies.Append(settings.AccessCookieName, accessToken.Value, access);
-        cookies.Append(settings.RefreshCookieName, rawRefreshToken, refresh);
+        cookies.Append(settings.AccessCookieName, accessToken.Value, CreateOptions(accessToken.ExpiresAt));
+        cookies.Append(settings.RefreshCookieName, rawRefreshToken, CreateOptions(refreshTokenExpiresAt));
     }
+
+    public void ClearSessionCookies(IResponseCookies cookies)
+    {
+        AuthSettings settings = options.Value;
+        cookies.Delete(settings.AccessCookieName, CreateOptions());
+        cookies.Delete(settings.RefreshCookieName, CreateOptions());
+    }
+
+    private CookieOptions CreateOptions(DateTimeOffset? expiresAt = null) => new()
+    {
+        Path = "/",
+        HttpOnly = true,
+        Secure = options.Value.RequireSecureCookies,
+        SameSite = SameSiteMode.Strict,
+        IsEssential = true,
+        Expires = expiresAt,
+    };
 }

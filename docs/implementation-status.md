@@ -1,9 +1,9 @@
 # Implementation status
 
-The state of the foundation: what is built, what is verified, and every place the
-implementation knowingly departs from the original plan.
+The state of the foundation and implemented product slices, including verified behavior and
+known limits. The detailed auth contract is in [ADR 0016](adr/0016-refresh-logout-contracts-and-commit-outcomes.md).
 
-Last updated: 2026-10-25.
+Last updated: 2026-11-17.
 
 ## Checkpoints
 
@@ -24,13 +24,27 @@ Last updated: 2026-10-25.
 
 ## Test suite
 
-`dotnet test` runs **70 tests** and exits `0`.
+The suite includes foundation, Identity, signup Billing and refresh/logout acceptance checks.
+The final 2026-11-17 verification passed **258 tests**, with zero failures or skips and a
+Release build with zero warnings/errors.
+The final branch verification commands and scope are recorded in
+[the auth acceptance matrix](auth-session-acceptance.md).
 
-| Project | Count | Covers |
-|---|---|---|
-| `BandUp.UnitTests` | 35 | pipeline order and transaction semantics, validation, logging policy, slice handlers |
-| `BandUp.ArchitectureTests` | 11 | the dependency graph and framework bans |
-| `BandUp.IntegrationTests` | 24 | INF-01 to INF-07, 09, 10, 12, 13 against real containers |
+| Project | Covers |
+|---|---|
+| `BandUp.UnitTests` | Pipeline semantics, domain rules, handlers, token issuance/revocation, CAPTCHA adapters and logging |
+| `BandUp.ArchitectureTests` | Project dependency direction and framework bans |
+| `BandUp.IntegrationTests` | Foundation scenarios, migrations, registration/login/profile, session HTTP flows, database locks, Redis failures and concurrent requests |
+
+## Product slices
+
+| Slice | Implemented behavior |
+|---|---|
+| Identity | Registration, password login, profile, rotating refresh, reuse detection and logout |
+| Session transport | HttpOnly cookies with configured expiry/security, CSRF guard and common ProblemDetails |
+| Access revocation | Validated JWT metadata and Redis blacklist enforcement through expiry plus clock skew |
+| Billing signup | Credit account and ledger with the signup grant; `/me` reads the current balance |
+| Auth developer flow | Fake CAPTCHA and Development Swagger header support; [setup guide](auth-local-setup.md) |
 
 ## Scenario coverage
 
@@ -49,6 +63,9 @@ Last updated: 2026-10-25.
 | INF-11 | log lines are JSON with the required keys; sensitive values masked | Unit |
 | INF-12 | CORS allows only the configured origin with credentials | Integration |
 | INF-13 | the OpenAPI document lists the endpoints and their responses | Integration |
+| AUTH-01 to AUTH-08 | Registration, CAPTCHA behavior, login timing and authenticated profile | Unit + Integration |
+| AUTH-09 | Rotation, expired/inactive rejection, committed reuse revocation and concurrent refresh | Unit + Integration |
+| AUTH-10 | Owner-scoped logout, JWT blacklist, expiry/skew, Redis failures and refresh/logout races | Unit + Integration |
 
 ## Approved adjustments
 
@@ -86,11 +103,22 @@ can be moved without editing the file. See the README section "Ports that cannot
 
 | Gap | Impact | Where it closes |
 |---|---|---|
-| The `--migrate` **argument** is verified by hand, not by a test | A regression in argument parsing would go unnoticed | Optional: spawn the built assembly against a container |
 | Sentry is verified only in its disabled state | The enabled path is untested | Deployment step, with a real DSN |
 | SIGTERM specifically is unverified | Windows has no SIGTERM; Ctrl+C exercises the same cancellation path | Deployment step, on Linux |
 | `INF_07` is not tagged `Slow` | It runs with the rest of the suite (~2 s) | When the suite grows enough to need a fast subset |
-| No product features | Expected: this is a foundation | Later steps |
+| Native browser rendering and real Turnstile interaction are not automated in this suite | HTTP cookie jars, Swagger assets and the fake provider are covered; a real widget needs client integration | Frontend/browser acceptance |
+| Login JSON uses a placeholder credit balance | `/me` returns the actual balance | Separate review-fix branch |
+| Register/login handlers currently omit the available client IP when invoking CAPTCHA | CAPTCHA outage quota can share the unknown-client bucket | Separate review-fix branch |
+| Signup credit repository additions are not awaited | The existing implementation should await both repository operations | Separate review-fix branch |
+
+## Session limits
+
+Clients must serialize refresh calls and coordinate logout with any pending refresh, including
+across tabs. A logout that presents an old cookie after a concurrent refresh does not revoke
+the newly issued successor. Redis blacklist reads fail open on outage; writes fail logout.
+PostgreSQL and Redis have no shared transaction, so a database failure after a blacklist write
+can reject the access JWT while its refresh revocation rolls back. These are documented and
+covered in [the client contract](auth-client-contract.md) and acceptance matrix.
 
 ## Not in this repository, by design
 

@@ -4,6 +4,8 @@ using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
 using BandUp.Application.Features.Identity.GetMe;
 using BandUp.Application.Features.Identity.Login;
+using BandUp.Application.Features.Identity.Logout;
+using BandUp.Application.Features.Identity.Refresh;
 using BandUp.Application.Features.Identity.Register;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -11,9 +13,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace BandUp.Api.Endpoints.Auth;
 
 /// <summary>
-/// AUTH-01 to 04, 06-08. Implements the registration, login and profile flow. Registration
-/// creates the user + credit account; login mints cookies; GetMe provides the profile shape
-/// for the dashboard.
+/// Maps the Identity use cases to HTTP and manages session cookies after dispatch completes.
 /// </summary>
 public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGroup
 {
@@ -40,6 +40,30 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
             .RequireAuthorization()
             .Produces<MeDto>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        endpoints.MapPost("/refresh", RefreshAsync)
+            .WithName("Auth_Refresh")
+            .AllowAnonymous()
+            .Accepts<SessionRequest>("application/json")
+            .WithSummary("Renew the session cookies.")
+            .WithDescription("Uses the refresh cookie without requiring a valid access token. Send {} as application/json with X-Requested-With: bandup. Tokens are never returned in JSON.")
+            .Produces(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        endpoints.MapPost("/logout", LogoutAsync)
+            .WithName("Auth_Logout")
+            .RequireAuthorization()
+            .Accepts<SessionRequest>("application/json")
+            .WithSummary("End the current session.")
+            .WithDescription("Requires a valid access cookie. Send {} as application/json with X-Requested-With: bandup. Success deletes both session cookies.")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
     }
 
     private async Task<IResult> RegisterAsync(
@@ -89,7 +113,8 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
         cookieService.SetSessionCookies(
             httpContext.Response.Cookies,
             result.Value.AccessToken,
-            result.Value.RefreshToken);
+            result.Value.RefreshToken,
+            result.Value.RefreshTokenExpiresAt);
 
         UserDto dto = new(
             result.Value.UserId,
@@ -99,6 +124,58 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
             0); // Balance fetched in /me
 
         return TypedResults.Ok(dto);
+    }
+
+    private async Task<IResult> RefreshAsync(
+        SessionRequest _,
+        IDispatcher dispatcher,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        RefreshCommand command = new(
+            cookieService.ReadRefreshToken(httpContext.Request),
+            httpContext.Request.Headers.UserAgent.ToString());
+        Result<RefreshOutcome> result = await dispatcher.SendAsync<RefreshCommand, RefreshOutcome>(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            cookieService.ClearSessionCookies(httpContext.Response.Cookies);
+            return result.ToProblem(httpContext);
+        }
+
+        switch (result.Value)
+        {
+            case RefreshOutcome.Issued issued:
+                cookieService.SetSessionCookies(
+                    httpContext.Response.Cookies,
+                    issued.AccessToken,
+                    issued.RefreshToken,
+                    issued.RefreshTokenExpiresAt);
+                return TypedResults.Ok();
+            case RefreshOutcome.RejectedAfterRevocation:
+                cookieService.ClearSessionCookies(httpContext.Response.Cookies);
+                return Error.InvalidRefreshToken().ToProblem(httpContext);
+            default:
+                throw new InvalidOperationException("Unknown refresh outcome.");
+        }
+    }
+
+    private async Task<IResult> LogoutAsync(
+        SessionRequest _,
+        IDispatcher dispatcher,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        LogoutCommand command = new(cookieService.ReadRefreshToken(httpContext.Request));
+        Result<LogoutOutcome> result = await dispatcher.SendAsync<LogoutCommand, LogoutOutcome>(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return result.ToProblem(httpContext);
+        }
+
+        cookieService.ClearSessionCookies(httpContext.Response.Cookies);
+        return TypedResults.NoContent();
     }
 
     private async Task<IResult> GetMeAsync(
@@ -115,5 +192,6 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
 
     public sealed record RegisterRequest(string Email, string Password, string DisplayName, string CaptchaToken);
     public sealed record LoginRequest(string Email, string Password, string CaptchaToken);
+    public sealed record SessionRequest;
     public sealed record UserDto(Guid Id, string Email, string DisplayName, string Role, int CreditBalance);
 }
