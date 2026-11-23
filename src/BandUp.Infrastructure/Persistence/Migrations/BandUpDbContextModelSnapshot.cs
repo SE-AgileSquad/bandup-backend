@@ -541,7 +541,7 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("lessons_question_type_check", "question_type IN ('TrueFalseNotGiven', 'SentenceCompletion')");
 
-                            t.HasCheckConstraint("lessons_status_check", "status IN ('Draft', 'Published')");
+                            t.HasCheckConstraint("lessons_status_check", "status IN ('Draft', 'Published', 'Archived')");
                         });
                 });
 

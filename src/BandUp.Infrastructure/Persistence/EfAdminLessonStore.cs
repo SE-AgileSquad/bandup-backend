@@ -27,12 +27,28 @@ public sealed class EfAdminLessonStore(BandUpDbContext context) : IAdminLessonSt
             context.LessonExamples.Where(example => example.LessonId == lessonId && example.Id == exampleId),
             cancellationToken);
 
-    public Task<PagedResult<LessonSummary>> ListAsync(PageRequest page, CancellationToken cancellationToken) =>
-        EfStoreOperations.ReadPageAsync(
-            context.Lessons.AsNoTracking().OrderBy(lesson => lesson.SortOrder).ThenBy(lesson => lesson.Id)
+    public Task<PagedResult<LessonSummary>> ListAsync(
+        PageRequest page, LessonStatus? status, string? search, CancellationToken cancellationToken)
+    {
+        IQueryable<Lesson> lessons = context.Lessons.AsNoTracking();
+        if (status.HasValue)
+        {
+            lessons = lessons.Where(lesson => lesson.Status == status.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            string term = search.ToLowerInvariant();
+            lessons = lessons.Where(lesson => lesson.Title.ToLower().Contains(term));
+        }
+
+        return EfStoreOperations.ReadPageAsync(
+            lessons.OrderBy(lesson => lesson.SortOrder).ThenBy(lesson => lesson.Title).ThenBy(lesson => lesson.Id)
                 .Select(lesson => new LessonSummary(
-                    lesson.Id, lesson.Title, lesson.QuestionType, lesson.SortOrder, lesson.Status)),
+                    lesson.Id, lesson.Title, lesson.QuestionType, lesson.SortOrder, lesson.Status,
+                    lesson.Examples.Count)),
             page, cancellationToken);
+    }
 
     public Task<LessonDetails?> GetAsync(Guid id, CancellationToken cancellationToken) =>
         context.Lessons.AsNoTracking().Where(lesson => lesson.Id == id)

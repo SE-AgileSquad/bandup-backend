@@ -178,10 +178,13 @@ public sealed class AdminContentRequestTests
     }
 
     [Theory]
-    [InlineData("status=Unknown")]
-    [InlineData("status=999")]
-    [InlineData("search=")]
-    public async Task Invalid_Passage_Filters_Are_Rejected_Before_Reading_The_Database(string filter)
+    [InlineData("passages", "status=Unknown")]
+    [InlineData("passages", "status=999")]
+    [InlineData("passages", "search=")]
+    [InlineData("lessons", "status=Unknown")]
+    [InlineData("lessons", "status=999")]
+    [InlineData("lessons", "search=")]
+    public async Task Invalid_Content_Filters_Are_Rejected_Before_Reading_The_Database(string resource, string filter)
     {
         Guid actorId = Guid.CreateVersion7();
         await using AuthorizationApiFactory factory = new(actorId);
@@ -193,10 +196,28 @@ public sealed class AdminContentRequestTests
             filter += new string('a', 321);
         }
 
-        using HttpRequestMessage request = new(HttpMethod.Get, $"/api/admin/passages?{filter}");
+        using HttpRequestMessage request = new(HttpMethod.Get, $"/api/admin/{resource}?{filter}");
         request.Headers.Add("Cookie", $"bu_at={token.Value}");
         using HttpResponseMessage response = await client.SendAsync(request);
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Archiving_A_Lesson_Rejects_Anonymous_And_Ordinary_Users()
+    {
+        await using AuthorizationApiFactory factory = new();
+        using HttpClient client = factory.CreateClient();
+        string path = $"/api/admin/lessons/{Guid.NewGuid()}/archive";
+        using HttpResponseMessage anonymous = await client.PostAsJsonAsync(path, new { });
+        anonymous.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+
+        string token = factory.Services.GetRequiredService<ITokenService>()
+            .CreateAccessToken(Guid.CreateVersion7(), "User", TimeProvider.System.GetUtcNow()).Value;
+        using HttpRequestMessage request = new(HttpMethod.Post, path) { Content = JsonContent.Create(new { }) };
+        request.Headers.Add("Cookie", $"bu_at={token}");
+        request.Headers.Add("X-Requested-With", "bandup");
+        using HttpResponseMessage ordinaryUser = await client.SendAsync(request);
+        ordinaryUser.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
     private sealed class AuthorizationApiFactory(

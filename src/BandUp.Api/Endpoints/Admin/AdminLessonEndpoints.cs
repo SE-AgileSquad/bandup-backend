@@ -1,6 +1,7 @@
 using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
 using BandUp.Application.Features.Learning.Admin;
+using BandUp.Application.Features.Learning.Admin.ArchiveLesson;
 using BandUp.Application.Features.Learning.Admin.CreateLesson;
 using BandUp.Application.Features.Learning.Admin.CreateLessonExample;
 using BandUp.Application.Features.Learning.Admin.DeleteLesson;
@@ -11,6 +12,7 @@ using BandUp.Application.Features.Learning.Admin.GetAdminLesson;
 using BandUp.Application.Features.Learning.Admin.GetAdminLessonExample;
 using BandUp.Application.Features.Learning.Admin.ListAdminLessons;
 using BandUp.Application.Features.Learning.Admin.PublishLesson;
+using BandUp.Domain.Learning;
 
 namespace BandUp.Api.Endpoints.Admin;
 
@@ -28,11 +30,13 @@ public sealed class AdminLessonEndpoints : IEndpointGroup
         RouteGroupBuilder examples = lesson.MapGroup("/examples");
         RouteGroupBuilder example = examples.MapGroup("/{exampleId:guid}");
 
-        lessons.MapGet("", (int? page, int? pageSize, IDispatcher dispatcher, HttpContext http) =>
+        lessons.MapGet("", (int? page, int? pageSize, LessonStatus? status, string? search,
+                IDispatcher dispatcher, HttpContext http) =>
                 AdminContentHttp.ReadAsync<ListAdminLessonsQuery, PagedResult<LessonSummary>>(
-                    new ListAdminLessonsQuery(new PageRequest(page ?? 1, pageSize ?? PageRequest.DefaultPageSize)),
+                    new ListAdminLessonsQuery(new PageRequest(page ?? 1, pageSize ?? PageRequest.DefaultPageSize), status, search),
                     dispatcher, http))
-            .WithName("Admin_ListLessons").Produces<PagedResult<LessonSummary>>();
+            .WithName("Admin_ListLessons").Produces<PagedResult<LessonSummary>>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
 
         lessons.MapPost("", (LessonInput input, IDispatcher dispatcher, HttpContext http) =>
                 AdminContentHttp.CreatedAsync(new CreateLessonCommand(input), ResourcePath, dispatcher, http))
@@ -57,6 +61,11 @@ public sealed class AdminLessonEndpoints : IEndpointGroup
         lesson.MapPost("/publish", (Guid lessonId, IDispatcher dispatcher, HttpContext http) =>
                 AdminContentHttp.ChangeAsync(new PublishLessonCommand(lessonId), dispatcher, http))
             .WithName("Admin_PublishLesson").Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
+
+        lesson.MapPost("/archive", (Guid lessonId, IDispatcher dispatcher, HttpContext http) =>
+                AdminContentHttp.ChangeAsync(new ArchiveLessonCommand(lessonId), dispatcher, http))
+            .WithName("Admin_ArchiveLesson").Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
 
         examples.MapPost("", (Guid lessonId, LessonExampleInput input, IDispatcher dispatcher, HttpContext http) =>

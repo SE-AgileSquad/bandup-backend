@@ -63,4 +63,14 @@ public sealed class Lesson : Entity
 
         Status = LessonStatus.Published;
     }
+
+    public void Archive()
+    {
+        if (Status != LessonStatus.Published)
+        {
+            throw new DomainException("Only a published lesson can be archived.");
+        }
+
+        Status = LessonStatus.Archived;
+    }
 }

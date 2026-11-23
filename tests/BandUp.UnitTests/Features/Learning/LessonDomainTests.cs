@@ -26,6 +26,23 @@ public sealed class LessonDomainTests
         example.SortOrder.ShouldBe(2);
     }
 
+    [Fact]
+    public void Archiving_Requires_Publication_And_Preserves_Content()
+    {
+        Lesson lesson = CreateLesson();
+        Should.Throw<DomainException>(() => lesson.Archive());
+        lesson.Status.ShouldBe(LessonStatus.Draft);
+        LessonExample example = lesson.AddExample("The birds build nests.", "Nest building", 1);
+        lesson.Publish();
+
+        lesson.Archive();
+
+        lesson.Status.ShouldBe(LessonStatus.Archived);
+        lesson.Title.ShouldBe("False vs Not Given");
+        lesson.Examples.Single().ShouldBeSameAs(example);
+        Should.Throw<DomainException>(() => lesson.Publish());
+    }
+
     [Theory]
     [InlineData("", "paraphrase")]
     [InlineData("evidence", " ")]
