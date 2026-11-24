@@ -17,6 +17,18 @@ public interface IAttemptRepository : IRepository<Attempt>
     /// </summary>
     Task<Attempt?> GetWithAnswersForUpdateAsync(Guid attemptId, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Ids of this learner's attempts still stored as in progress whose deadline plus grace
+    /// ended before <paramref name="graceCutoff"/> (that is, now minus the grace), optionally
+    /// only one of them. Ids only and untracked: the caller locks and loads each attempt itself,
+    /// so what it changes is what the database holds at that moment.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> ListDueAttemptIdsAsync(
+        Guid userId,
+        DateTimeOffset graceCutoff,
+        Guid? attemptId,
+        CancellationToken cancellationToken);
+
     Task<Attempt?> FindInProgressAsync(Guid userId, Guid passageId, CancellationToken cancellationToken);
 
     /// <summary>

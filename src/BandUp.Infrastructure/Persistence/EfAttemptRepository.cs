@@ -35,6 +35,29 @@ public sealed class EfAttemptRepository(BandUpDbContext context) : IAttemptRepos
         return await GetWithAnswersAsync(attemptId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Guid>> ListDueAttemptIdsAsync(
+        Guid userId,
+        DateTimeOffset graceCutoff,
+        Guid? attemptId,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<Attempt> due = context.Attempts
+            .AsNoTracking()
+            .Where(attempt => attempt.UserId == userId
+                && attempt.Status == AttemptStatus.InProgress
+                && attempt.ExpiresAt < graceCutoff);
+
+        if (attemptId is { } id)
+        {
+            due = due.Where(attempt => attempt.Id == id);
+        }
+
+        return await due
+            .OrderBy(attempt => attempt.ExpiresAt)
+            .Select(attempt => attempt.Id)
+            .ToListAsync(cancellationToken);
+    }
+
     public Task<Attempt?> FindInProgressAsync(Guid userId, Guid passageId, CancellationToken cancellationToken) =>
         context.Attempts
             .Include(attempt => attempt.Answers)
