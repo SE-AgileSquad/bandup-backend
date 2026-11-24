@@ -44,6 +44,10 @@ public sealed class BandUpApiFactory : WebApplicationFactory<Program>
         builder.ConfigureAppConfiguration((_, configuration) =>
             configuration.AddInMemoryCollection(settings));
 
+        // Counts which endpoints the tests reach (see EndpointHitRecorder).
+        builder.ConfigureTestServices(services =>
+            services.AddSingleton<IStartupFilter, EndpointHitStartupFilter>());
+
         if (_logSink is null && _configureServices is null)
         {
             return;
