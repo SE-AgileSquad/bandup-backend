@@ -35,6 +35,17 @@ public static class ProblemDetailsFactory
         return problem;
     }
 
+    public static ProblemDetails ForBadHttpRequest(HttpContext httpContext, int statusCode)
+    {
+        ProblemDetails problem = ForError(Error.Validation(new Dictionary<string, string[]>
+        {
+            ["body"] = ["The request body could not be read. Send a valid JSON object."],
+        }), httpContext);
+        problem.Status = statusCode;
+        problem.Title = ErrorHttpMapper.TitleFor(statusCode);
+        return problem;
+    }
+
     public static ProblemDetails ForUnhandledException(HttpContext httpContext)
     {
         ProblemDetails problem = new()

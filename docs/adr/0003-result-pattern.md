@@ -36,3 +36,8 @@ failure.
   That is deliberate: returning `default` would hide the bug instead.
 - Cost: the pipeline cannot use exceptions for control flow, so "log and rethrow" patterns are
   limited to genuine faults.
+
+For refresh-token reuse, [ADR 0016](0016-refresh-logout-contracts-and-commit-outcomes.md)
+defines a completed revocation outcome carried by a successful command result. The endpoint
+rejects refresh only after that security action has committed; ordinary failed results still
+roll back.

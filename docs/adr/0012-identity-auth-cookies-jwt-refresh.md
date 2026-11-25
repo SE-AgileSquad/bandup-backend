@@ -2,6 +2,9 @@
 
 **Status:** Accepted.
 
+**Follow-up:** [ADR 0016](0016-refresh-logout-contracts-and-commit-outcomes.md) defines the
+refresh/logout HTTP contracts, committed reuse-revocation outcome and concurrency requirements.
+
 ## Context
 
 Tier 1 needs register, login, logout, refresh and role checks (AUTH-01 to AUTH-11). The product

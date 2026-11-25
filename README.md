@@ -4,12 +4,12 @@ Backend for BandUp, an IELTS Reading and Writing preparation platform.
 
 A **modular monolith** on .NET 10: one API process, one Worker process, one PostgreSQL
 database, with Redis for caching and RabbitMQ for asynchronous work. Business logic lives in
-the Domain and Application layers, which reference no framework at all — the layering is
-enforced by automated tests, so a wrong-direction reference fails the build rather than a
-review.
+the Domain and Application layers, without EF Core, ASP.NET, Redis or RabbitMQ dependencies.
+Architecture tests enforce those boundaries and the direction of project references.
 
-This repository holds the **foundation** and one reference slice. Product features are built
-on top of it in later stages.
+This repository includes the foundation, the System reference slice, cookie-based Identity
+registration/login/profile/refresh/logout, email-code password recovery with local/Resend delivery, and signup
+credit accounts in Billing.
 
 ## What is here
 
@@ -33,6 +33,9 @@ Tests live in `tests/`: unit, architecture, and integration (Testcontainers).
 | [docs/architecture/patterns.md](docs/architecture/patterns.md) | you want to know why a pattern is there, or when not to use it |
 | [docs/adr/](docs/adr/) | you want the reasoning behind a decision |
 | [docs/implementation-status.md](docs/implementation-status.md) | you want to know what is built and what is not |
+| [docs/auth-local-setup.md](docs/auth-local-setup.md) | you want the complete PowerShell/Docker/secrets/Swagger setup, with fake CAPTCHA |
+| [docs/auth-client-contract.md](docs/auth-client-contract.md) | you are integrating browser session refresh and logout |
+| [docs/auth-session-acceptance.md](docs/auth-session-acceptance.md) | you want the auth acceptance coverage and concurrency limits |
 | [docs/admin-users-api.md](docs/admin-users-api.md) | you are connecting the super-admin Users page |
 | [docs/admin-dashboard-api.md](docs/admin-dashboard-api.md) | you are connecting the Admin home counters |
 | [infra/README.md](infra/README.md) | you want to deploy, or change Docker/Nginx/CI/CD |
@@ -84,6 +87,10 @@ docker compose --env-file infra/env/dev.env -f infra/docker/docker-compose.dev.y
 Passwords do not live in the repository. The API and the Worker each read them from .NET user
 secrets, which are stored outside the checkout.
 
+For a complete Windows setup with alternate ports and Swagger-only auth testing, follow
+[the auth setup guide](docs/auth-local-setup.md). Existing values can be overwritten with
+`dotnet user-secrets set`; clearing the stores is optional.
+
 Run these from the repository root. The username and password must be the same values you put
 in `infra/env/dev.env`, and the port must match the one the stack is published on.
 
@@ -114,6 +121,35 @@ dotnet user-secrets set "Redis:ConnectionString" "localhost:REDIS_PORT" --projec
 dotnet user-secrets set "RabbitMq:Port" "RABBITMQ_PORT" --project src/BandUp.Worker
 ```
 
+The API requires `Auth:SigningKey` and an independent `PasswordReset:CodeProtectionKey`.
+Generate them once for your local environment; do not
+copy a shared example key. This PowerShell snippet generates 32 random bytes:
+
+```powershell
+$bandupKeyBytes = New-Object byte[] 32
+$bandupRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+try {
+    $bandupRng.GetBytes($bandupKeyBytes)
+    dotnet user-secrets set 'Auth:SigningKey' ([Convert]::ToBase64String($bandupKeyBytes)) --project src/BandUp.Api
+    $bandupRng.GetBytes($bandupKeyBytes)
+    dotnet user-secrets set 'PasswordReset:CodeProtectionKey' ([Convert]::ToBase64String($bandupKeyBytes)) --project src/BandUp.Api
+}
+finally {
+    $bandupRng.Dispose()
+}
+dotnet user-secrets set 'Captcha:Provider' 'Fake' --project src/BandUp.Api
+```
+
+For recovery in Swagger, enable the optional `recovery` Docker Compose profile and select
+`Email:Provider=Mailpit`; [the local setup guide](docs/auth-local-setup.md#6-test-forgotten-password-recovery-with-a-local-inbox)
+contains the exact commands and walkthrough. No external email account is needed locally.
+For real email delivery, select `Email:Provider=Resend`, configure the API key and sender in
+API user secrets, and follow [the complete Resend/Swagger walkthrough](docs/auth-local-setup.md#7-use-resend-and-a-real-inbox-in-swagger).
+
+The fake provider accepts `fake-captcha-token` on register/login. The Worker needs neither
+the signing key nor the recovery key. In Development, `Auth:RequireSecureCookies=false`
+permits local HTTP.
+
 ## Ports that cannot be bound
 
 Windows reserves large blocks of TCP ports at boot for Hyper-V and WinNAT. A port inside one of
@@ -141,7 +177,7 @@ REDIS_PORT=16379
 RABBITMQ_PORT=15673
 ```
 
-The management UI stays on 15672 in that example, since it is rarely among the reserved ports.
+The management UI stays on 15672 in that example; change its port too if required.
 Nothing in the application hard-codes these ports; they come from configuration.
 
 Configuration is validated at startup, so a missing value stops the process with a message
@@ -165,7 +201,15 @@ reports unhealthy.
 dotnet run --project src/BandUp.Api
 ```
 
-Listens on `http://localhost:8080`.
+The `http` launch profile listens on `http://localhost:8080`. If that port is unavailable,
+override it without changing project files:
+
+```bash
+dotnet run --project src/BandUp.Api --launch-profile http -- --urls http://localhost:18080
+```
+
+Use the selected origin for both Swagger and API calls. Port 18080 is an example; choose an
+available port if it is occupied or reserved.
 
 | Endpoint | Purpose |
 |---|---|
@@ -176,6 +220,17 @@ Listens on `http://localhost:8080`.
 | `/api/_debug/throw` | Deliberate failure, to exercise the error format. Diagnostics only. |
 | `/api/system/time` | Reference slice — server time, environment and version. Diagnostics only. |
 | `/api/system/ping` | Reference slice — publishes a job the Worker consumes. Diagnostics only. |
+| `POST /api/auth/register` | Register with CAPTCHA and open a signup credit account; does not sign in. |
+| `POST /api/auth/login` | Authenticate with CAPTCHA and set HttpOnly access/refresh cookies. |
+| `GET /api/auth/me` | Current authenticated profile and credit balance. |
+| `POST /api/auth/refresh` | Rotate refresh credentials and replace cookies; empty `200`. |
+| `POST /api/auth/logout` | Revoke the presented refresh token and blacklist the access JWT; empty `204`. |
+
+Refresh/logout send `{}` with `Content-Type: application/json` and `X-Requested-With: bandup`.
+Development Swagger adds that header automatically to JSON API mutations. It uses browser
+cookies, so no frontend or manual JWT entry is required. Refresh is anonymous with respect to
+access authentication; logout requires a valid access cookie. Clients must coordinate refresh
+and logout, as described in [the client contract](docs/auth-client-contract.md).
 
 The `_debug` and `system` routes require `Features__Diagnostics=true` and are never mapped in
 Production, even when the flag is set.
@@ -210,7 +265,7 @@ your local dependency stack. Docker must be running for those; everything else r
 Filter to a single project or test:
 
 ```bash
-dotnet test tests/BandUp.UnitTests
+dotnet test --project tests/BandUp.UnitTests/BandUp.UnitTests.csproj
 ```
 
 ## Folder map

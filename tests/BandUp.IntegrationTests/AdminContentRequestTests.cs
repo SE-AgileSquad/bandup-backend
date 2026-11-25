@@ -192,6 +192,10 @@ public sealed class AdminContentRequestTests
                     ["Cache:Provider"] = "InMemory",
                     ["MessagePublisher:Provider"] = "InMemory",
                     ["Sentry:Dsn"] = string.Empty,
+                    ["PasswordReset:CodeProtectionKey"] =
+                        Convert.ToBase64String(Enumerable.Repeat((byte)42, 32).ToArray()),
+                    ["PasswordReset:RateLimitProvider"] = "InMemory",
+                    ["Email:Provider"] = "InMemory",
                 }));
             return base.CreateHost(builder);
         }
