@@ -1,4 +1,6 @@
 using BandUp.Application.Features.Identity;
+using BandUp.Application.Common;
+using BandUp.Api.Errors;
 using BandUp.Infrastructure.Configuration;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -40,28 +42,64 @@ public static class AuthExtensions
                     ValidateAudience = true,
                     ValidateIssuerSigningKey = true,
                     ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromSeconds(30),
+                    ClockSkew = AuthSettings.AccessTokenClockSkew,
                 };
 
                 options.Events = new JwtBearerEvents
                 {
-                    // The cookie is the transport. No cookie, no token, no Authorization
-                    // header fallback: the spec's cookie-first design, unchanged.
+                    // NoResult prevents JwtBearer's default Authorization-header fallback.
                     OnMessageReceived = context =>
                     {
                         context.Token = context.Request.Cookies[settings.AccessCookieName];
+
+                        if (string.IsNullOrWhiteSpace(context.Token))
+                        {
+                            context.NoResult();
+                        }
+
                         return Task.CompletedTask;
                     },
                     OnTokenValidated = async context =>
                     {
-                        string? subject = context.Principal?.FindFirstValue(IdentityClaimTypes.Subject)
-                            ?? context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
-                        IUserRepository users = context.HttpContext.RequestServices.GetRequiredService<IUserRepository>();
-                        if (!Guid.TryParse(subject, out Guid userId)
-                            || !await users.IsActiveAsync(userId, context.HttpContext.RequestAborted))
+                        AccessTokenIdentity? identity =
+                            AccessTokenClaims.Read(context.Principal);
+
+                        if (identity is null)
+                        {
+                            context.Fail("Invalid session claims.");
+                            return;
+                        }
+
+                        CancellationToken cancellationToken =
+                            context.HttpContext.RequestAborted;
+
+                        IAccessTokenRevocationStore revocations =
+                            context.HttpContext.RequestServices
+                                .GetRequiredService<IAccessTokenRevocationStore>();
+
+                        if (await revocations.IsRevokedAsync(
+                                identity.TokenId, cancellationToken))
+                        {
+                            context.Fail("Session revoked.");
+                            return;
+                        }
+
+                        IUserRepository users =
+                            context.HttpContext.RequestServices
+                                .GetRequiredService<IUserRepository>();
+
+                        if (!await users.IsActiveAsync(
+                                identity.UserId, cancellationToken))
                         {
                             context.Fail("The account is no longer active.");
                         }
+                    },
+                    OnChallenge = async context =>
+                    {
+                        context.HandleResponse();
+                        context.Response.Headers.WWWAuthenticate = JwtBearerDefaults.AuthenticationScheme;
+                        await Error.Unauthorized("Sign in to access this resource.")
+                            .ToProblem(context.HttpContext).ExecuteAsync(context.HttpContext);
                     },
                 };
             });

@@ -1,3 +1,5 @@
+using BandUp.Application.Features.Identity;
+
 namespace BandUp.Application.Abstractions;
 
 /// <summary>
@@ -11,4 +13,7 @@ public interface ICurrentUser
     string? Role { get; }
 
     bool IsAuthenticated { get; }
+
+    /// <summary>Validated session claims; null for anonymous callers or missing/malformed claims.</summary>
+    AccessTokenIdentity? AccessToken { get; }
 }

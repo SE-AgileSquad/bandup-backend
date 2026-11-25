@@ -7,8 +7,9 @@ namespace BandUp.Application.Features.Exams.GetAttemptResult;
 
 /// <summary>
 /// The result of a submitted attempt, with the answer key revealed. Refused while the attempt
-/// is still open, so the key can never be read mid-exam. An attempt that ran out of time has no
-/// result and says so, rather than looking like one that is merely not submitted yet.
+/// is still open, so the key can never be read mid-exam. An attempt that ran out of time with
+/// nothing saved has no result and says so, rather than looking like one that is merely not
+/// submitted yet. One with saved answers was already graded at the deadline.
 /// </summary>
 public sealed class GetAttemptResultHandler(
     ICurrentUser currentUser,

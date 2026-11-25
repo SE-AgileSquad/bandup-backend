@@ -1,0 +1,259 @@
+# 0016 — Refresh/logout contracts and committed revocation outcomes
+
+**Status:** Accepted. All six backend phases are implemented and verified. The supporting
+adapters, refresh/logout commands, JWT blacklist, HTTP/cookie lifecycle, final acceptance
+checks and setup/client documentation are complete. See [acceptance coverage](../auth-session-acceptance.md).
+
+## Context
+
+[ADR 0012](0012-identity-auth-cookies-jwt-refresh.md) defines rotating refresh tokens and
+logout. AUTH-09 requires a reused token to be rejected while revoking the user's refresh
+sessions. The existing transaction behavior rolls back every failed `Result`, so returning
+`Result.Failure(Error.InvalidRefreshToken())` after changing those rows would undo revocation.
+
+The HTTP contract, cookie lifecycle and concurrency rules must be explicit before implementing
+the handlers. Domain and Application remain independent of HTTP, EF Core and Redis types.
+
+## Decision
+
+### HTTP and cookie contracts
+
+| Endpoint | Credential | Success | Expected rejection |
+|---|---|---|---|
+| `POST /api/auth/refresh` | `bu_rt` cookie; no valid access token required | `200`, empty body, replacement `bu_at` and `bu_rt` cookies | `401 INVALID_REFRESH_TOKEN` for a missing, unknown, expired or revoked token, or a missing/inactive user |
+| `POST /api/auth/logout` | Valid authenticated access token in `bu_at`; `bu_rt` identifies the refresh token to revoke | `204`, empty body, both cookies deleted | `401` when access authentication fails |
+
+- Neither request accepts tokens in a JSON body, and neither response serializes tokens.
+  Clients send `{}` with `Content-Type: application/json` and `X-Requested-With: bandup` to
+  satisfy the existing CSRF middleware. Requests carrying either session cookie and failing
+  that guard receive `400 VALIDATION_ERROR` before a handler runs. Authentication failures
+  remain subject to the host's authentication/authorization middleware ordering.
+- Refresh is not protected by access-token authorization: an expired access token is the
+  normal reason to call it. Missing/invalid refresh credentials use the auth error above,
+  rather than a FluentValidation `400`.
+- Refresh `401` responses clear both cookies. On successful logout, the API clears both
+  cookies after the command completes. Deletion uses the same path/domain as issuance.
+  Both cookies use an explicit `Path=/`, `HttpOnly`, `SameSite=Strict` and the configured
+  `Secure` policy. Cookie expiry matches the associated issued token's expiry.
+- The API reads cookies, maps outcomes to HTTP and writes/deletes cookies. Application handlers
+  implement session rules. Raw refresh tokens and issued outcomes must never be logged.
+- Access and refresh lifetimes use `Auth:AccessTokenMinutes` and `Auth:RefreshTokenDays`.
+  Login and refresh use the same issuance policy through an Application-facing abstraction;
+  Application must not reference Infrastructure's `AuthSettings`.
+
+### Commit the security action before rejecting refresh
+
+Introduce `RefreshOutcome` in Application with two distinct cases:
+
+- `Issued`: an access token, raw refresh token and refresh-token expiry for cookie issuance.
+- `RejectedAfterRevocation`: reuse was detected and all of that user's unrevoked refresh
+  tokens were revoked. This case cannot carry replacement tokens.
+
+The handler returns `Result<RefreshOutcome>.Success(new
+RefreshOutcome.RejectedAfterRevocation())` only after recording the required revocations in
+the current transaction. The existing pipeline saves and commits them. After dispatch
+completes, the endpoint maps this case through `Error.InvalidRefreshToken()` to the same
+ProblemDetails `401` as any other invalid refresh. A client cannot distinguish reuse from
+other invalid credentials by the public error code or message.
+
+For rejections that need no committed changes, return
+`Result<RefreshOutcome>.Failure(Error.InvalidRefreshToken())`. They roll back normally.
+Exceptions, save failures and commit failures propagate without issuing replacement cookies
+or claiming successful revocation. No special commit-on-failure flag, nested commit or change
+to the shared `Result`/transaction behavior is introduced.
+
+This is a narrow refinement of [ADR 0003](0003-result-pattern.md): the successful command
+result means the security action completed, not that a session was issued. The handler must
+log a structured warning for detected reuse because the generic pipeline logs a completed
+command as successful. It must not log token values or hashes.
+
+### Rotation, reuse and concurrency
+
+- Only hashes are persisted. A successful rotation revokes the old token, sets its
+  `replaced_by_id`, inserts the successor and commits before cookies are written.
+- A known revoked token triggers reuse handling, including when it is also expired. Revoked
+  rows remain available for reuse detection. Reuse revokes all unrevoked refresh tokens of
+  that user, following ADR 0012; it does not revoke every outstanding access JWT.
+- Rotation and reuse handling must serialize changes to the affected user's refresh sessions
+  within the database transaction. Infrastructure must lock and re-read state or provide an
+  equivalent atomic operation; an ordinary tracked read followed by `SaveChanges` is not a
+  concurrency guarantee. Coordinate logout revocation through the same mechanism. Preserve a
+  consistent lock order and test with separate connections.
+- Two requests cannot both rotate the same token. Under strict reuse detection the losing
+  request revokes the successor issued by the winner. The frontend must coordinate refresh
+  requests rather than refresh in parallel. This is documented behavior, not a grace window.
+- New refresh tokens are issued only for an existing, active user, using the user's current
+  role. Unknown or expired unrevoked credentials never issue a replacement session.
+
+### Logout and access-token revocation
+
+- Obtain user id, `jti` and expiry from the validated authentication context through an
+  Application interface. Do not trust decoded, unvalidated JWT claims or request-body ids.
+- Revoke the presented refresh token only if it belongs to the authenticated user. A missing,
+  unknown or foreign refresh cookie does not revoke another user's session; it does not
+  prevent blacklisting the caller's access token and clearing this browser's cookies.
+- A token already revoked needs no second mutation. Repeated HTTP logout may return `401`
+  because the access token has already been blacklisted; the endpoint does not promise an
+  anonymous or expired-access-token logout path.
+- Store one blacklist entry per `jti`. Its TTL covers the remaining JWT validation window,
+  including the validator's current 30-second clock skew. Reject known blacklisted tokens
+  during token validation, so logout cannot be bypassed by restoring a copied access cookie.
+- Follow ADR 0012's availability choice: a Redis read outage logs a warning and permits
+  otherwise-valid JWT authentication until the validation window ends. A logout blacklist
+  write failure propagates as an infrastructure failure; do not return `204` or clear cookies
+  as though server-side logout succeeded. PostgreSQL and Redis have no shared transaction,
+  so partial-failure behavior must be tested and documented with the adapter implementation.
+
+## Verification and consequences
+
+- Phase 1 adds a test-only command using the real dispatcher, transaction pipeline and
+  PostgreSQL token rows. It proves that `RejectedAfterRevocation` commits revocations before
+  dispatch returns, while an ordinary failed refresh result rolls its mutations back. This
+  verifies the transaction contract, not the future refresh/reuse handler or HTTP mapping.
+- Acceptance coverage verifies atomic rotation, concurrent refresh/reuse and logout races,
+  inactive users, cookie deletion/attributes, CSRF, blacklist expiry and Redis failures through
+  integration tests. Native-browser/real-widget and deployment checks remain outside this
+  backend run, as recorded in the acceptance matrix.
+- Phase 2 reuses the existing schema with the locking, revocation and issuance adapters
+  described below. It requires no migration or new package.
+- The two refresh outcomes carry different data so a revocation rejection cannot accidentally
+  supply replacement cookies. All callers must handle both cases explicitly after dispatch.
+
+## Phase 2 implementation
+
+- `IRefreshTokenStore.FindSessionForUpdateAsync` first locates the owner by token hash, locks
+  that user's row with PostgreSQL `SELECT ... FOR UPDATE`, then re-reads the token and user.
+  The returned user is a fresh snapshot; the token is tracked for mutation. An existing tracked
+  token is refreshed without overwriting pending changes: callers must lock before mutating.
+  Unknown credentials return null; revoked and expired rows are still returned for classification.
+- Session insertion, single-token revocation and all-user revocation acquire the same user-row
+  lock, held until the existing transaction ends. They require the unit of work's default
+  Read Committed isolation; a repeatable-read snapshot could hide preceding token changes even
+  after the lock wait. Missing or unsupported transactions are rejected. Saving/committing is
+  left to the caller. No token lock precedes the user lock. All-user revocation
+  includes expired unrevoked rows; single-token revocation filters by the authenticated user
+  before touching a token, so a foreign cookie never causes a foreign-user lock or mutation.
+- `ISessionTokenIssuer` creates the access JWT, opaque refresh value and hashed refresh row
+  using the configured lifetimes. Login now uses this policy and returns internal refresh
+  expiry metadata for the later cookie phase. Its public JSON response is unchanged. Refresh
+  uses the same policy with the fresh user's current role.
+- `IAccessTokenRevocationStore` uses the existing cache abstraction, backed by Redis or its
+  in-memory fake. Keys are `auth:revoked-jti:<id>` under the cache's `bandup:` prefix. Retention
+  ends at JWT expiry plus the shared 30-second validation skew. Redis read failures warn and
+  fail open; write failures propagate. Cancellation and unexpected errors propagate too.
+  Phase 4 wires the store into authentication enforcement and the logout command.
+- Revocation-store writes are immediate and independent of the PostgreSQL transaction. A
+  successful Redis write followed by a database rollback leaves the access token blacklisted;
+  a Redis write failure can roll back database changes through the command pipeline. The
+  logout phase must test write and commit failures and must never claim atomicity across stores.
+- Adapter integration tests use separate PostgreSQL connections and observe an actual lock
+  wait before releasing the first transaction. They cover committed rotation, rollback, stale
+  tracked state, current user role, concurrent insertion/revocation, owner isolation and Redis
+  TTL. These are adapter probes, not proof of the future AUTH-09/AUTH-10 HTTP flows.
+
+## Phase 3 implementation
+
+- `RefreshCommand` carries the nullable raw refresh-cookie value and optional user agent.
+  `RefreshHandler` is discovered by the existing Application handler registration. It needs
+  no access-token identity or CAPTCHA. No validator turns missing credentials into a `400`;
+  missing/blank, unknown, expired unrevoked and inactive-user credentials return the existing
+  `INVALID_REFRESH_TOKEN` failure. A missing user is returned as an unknown session by the store.
+- The handler hashes the presented credential and uses `FindSessionForUpdateAsync` before
+  classifying it. It reads `TimeProvider` after acquiring the lock, so credentials that expire
+  while waiting are rejected. Revocation is checked before expiry or account activity: a known
+  revoked token always triggers all-user refresh revocation, including for an inactive user.
+- Reuse logs a structured warning containing the user id, without token values or hashes,
+  and returns `RejectedAfterRevocation` as a completed result. The existing pipeline commits
+  the revocations before dispatch returns. Storage/save/commit failures propagate instead.
+- For an active user with an unrevoked, unexpired token, the shared issuer creates a successor
+  with the current role and configured lifetimes. `Rotate` revokes the old row and sets its
+  replacement id; insertion joins the same transaction. Only after commit does dispatch return
+  the issued access token, raw refresh token and refresh expiry for the later cookie endpoint.
+- Handler-level integration tests verify committed rotation and reuse, failed-result behavior,
+  rollback after flushed mutations and simulated commit failures. Concurrent real refresh
+  commands serialize: the loser detects reuse and revokes the winner's successor, as specified
+  above. Phases 5 and 6 verify HTTP status mapping, cookie behavior and backend AUTH-09/AUTH-10
+  acceptance.
+
+## Phase 4 implementation
+
+- `ICurrentUser.AccessToken` exposes an `AccessTokenIdentity` containing only the validated
+  user id, JWT id and expiry. The API projects it from the authenticated principal, accepting
+  raw or mapped subject claims. Missing, malformed, duplicate or out-of-range required claims
+  produce no identity. Anonymous principals and the Worker's `NullCurrentUser` expose none.
+  The Application handler never decodes JWTs or accepts caller ids/expiry in the command.
+- `LogoutCommand` carries only the optional refresh-cookie value. `LogoutHandler` rejects
+  missing authentication metadata, hashes a presented refresh credential, and calls
+  `RevokeForUserAsync` with the authenticated user id. It never performs all-user revocation.
+  A missing, unknown, foreign or previously revoked refresh token still permits blacklisting
+  the authenticated access JWT. Expired refresh rows belonging to the caller are revoked too.
+- The chosen order is database revocation preparation, Redis blacklist write, then the existing
+  pipeline's database save and commit. A Redis write error aborts the command and rolls back
+  database changes. A later save or commit error can leave the access JWT blacklisted while
+  refresh revocation rolls back; Redis is not compensated. In either case no completed logout
+  outcome is returned. A client may need refresh or a new login to recover from partial failure.
+- `OnTokenValidated` checks the required claims and blacklist only after standard signature,
+  issuer, audience and lifetime validation. Known revoked JWTs fail authentication. Redis read
+  outages retain the warning/fail-open policy for otherwise-valid JWTs; they do not bypass the
+  preceding validation or claim checks. Logout retains the full expiry-plus-skew blacklist TTL.
+- Cookie transport is explicit: when no access cookie is present, `OnMessageReceived` returns
+  `NoResult` to prevent JwtBearer's default Authorization-header fallback. This enforces the
+  existing cookie-only contract; a bearer header cannot supply logout authentication.
+- Tests dispatch logout with a principal produced by the real JWT authentication handler,
+  verify PostgreSQL/Redis outcomes and partial failures, and prove `/api/auth/me` rejects a
+  restored copy of the logged-out JWT. Phase 5 adds the production logout endpoint and cookie
+  deletion; phase 6 verifies both HTTP refresh/logout race orders. No migration or package is
+  required.
+
+## Phase 5 implementation
+
+- `POST /api/auth/refresh` is explicitly anonymous and reads only the configured refresh
+  cookie. Its empty JSON request type has no credential fields. After dispatch commits,
+  `Issued` writes replacement cookies and returns an empty `200`; a normal invalid-token
+  failure or completed `RejectedAfterRevocation` clears both cookies and returns the same
+  `401 INVALID_REFRESH_TOKEN` ProblemDetails. The endpoint handles both completed outcomes
+  explicitly. Infrastructure failures propagate without issuing or deleting cookies.
+- `POST /api/auth/logout` requires access authentication, dispatches the cookie-based logout
+  command, and deletes both cookies only after successful dispatch. It returns empty `204`.
+  Authentication failures return `401` without claiming logout or deleting cookies; Redis or
+  database failures return the existing generic infrastructure error without cookie changes.
+- `AuthCookieService` owns refresh-cookie reads, both-cookie issuance and both-cookie deletion.
+  Login and refresh pass the actual issued access/refresh expiry metadata. Both cookies have
+  explicit `Path=/`, host-only scope, `HttpOnly`, `SameSite=Strict`, the configured `Secure`
+  flag and `Expires`. HTTP cookie dates have second precision. Deletion uses the same policy,
+  names and scope, with an empty value and expired date. No raw tokens are returned in JSON.
+- Authentication/authorization middleware is placed explicitly after request-id, logging,
+  CORS and the existing CSRF guard. JWT challenges now use the common `UNAUTHORIZED`
+  ProblemDetails response and request id instead of an empty response. CSRF rejections still
+  occur before the handlers and do not change sessions or cookies. JSON-binding exceptions
+  preserve their client-error HTTP status in generic validation ProblemDetails; malformed
+  JSON does not become an infrastructure `500` or trigger session mutation/cookie changes.
+- OpenAPI declares required empty JSON request shapes, empty success responses and the error statuses.
+  Descriptions state the cookie credentials and `X-Requested-With: bandup` requirement. In
+  Development, Swagger UI's [request interceptor](https://swagger.io/docs/open-source-tools/swagger-ui/usage/configuration/)
+  adds that header only to same-origin `/api/` requests using an unsafe method and JSON content
+  type. Server-side CSRF checks remain active, and no interceptor is installed outside
+  Development. No frontend or manual access-token entry is needed for the local Swagger flow.
+- HTTP integration tests cover the login/refresh/logout cookie jar, secure/custom-name policy,
+  actual token expiry, refresh without valid access authentication, committed reuse rejection,
+  logout authorization, CSRF and failure responses. Phase 6 adds the final cross-handler races
+  and consolidated setup/client documentation. No migration or package is required.
+
+## Phase 6 acceptance and documentation
+
+- Real HTTP race tests verify duplicate refresh, logout-first and refresh-first orders, and
+  independent users. They hold a session lock and observe the other connection waiting in
+  PostgreSQL before releasing it. The tests preserve the presented-credential contract:
+  logout with stale cookies after refresh does not revoke the newly issued successor. Clients
+  must finish pending renewal before sending logout, including when coordinating across tabs.
+- A subprocess acceptance check launches the built API with `--migrate`, isolated Production
+  configuration and a separate database inside the test PostgreSQL container. It verifies
+  successful exit, applied migrations and required extensions without developer secrets or
+  the development compose stack. Swagger page/script assets are verified through HTTP too.
+- [Local setup](../auth-local-setup.md) covers Docker, optional secrets reset, signing key,
+  fake CAPTCHA, HTTP cookies, alternative ports and the Swagger session walkthrough.
+  [The client contract](../auth-client-contract.md) covers credentials, empty success bodies,
+  refresh/logout coordination, reuse and partial-failure recovery.
+  [The acceptance matrix](../auth-session-acceptance.md) records verification and remaining
+  browser/deployment boundaries. The README, architecture and implementation status reflect
+  the implemented Identity/Billing slices. This phase changes tests and documentation only.
