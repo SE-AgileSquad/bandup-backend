@@ -9,5 +9,5 @@ public sealed class ListAdminLessonsHandler(IAdminLessonStore store)
     public async Task<Result<PagedResult<LessonSummary>>> HandleAsync(
         ListAdminLessonsQuery query, CancellationToken cancellationToken) =>
         Result<PagedResult<LessonSummary>>.Success(
-            await store.ListAsync(query.Page, query.Status, query.Search?.Trim(), cancellationToken));
+            await store.ListAsync(query.Page, query.Status, query.Search?.Trim(), query.QuestionType, cancellationToken));
 }

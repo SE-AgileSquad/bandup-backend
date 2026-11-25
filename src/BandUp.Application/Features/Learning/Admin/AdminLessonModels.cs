@@ -14,9 +14,13 @@ public sealed record LessonSummary(
 
 public sealed record LessonDetails(
     Guid Id, string Title, string Body, QuestionType QuestionType, int SortOrder, LessonStatus Status,
-    IReadOnlyList<LessonExampleDetails> Examples)
+    IReadOnlyList<LessonExampleDetails> Examples,
+    bool CanChangeQuestionType,
+    LessonPublicationReadiness PublishReadiness)
 {
     public bool HasPractice => Examples.Count > 0;
+    public int ExampleCount => Examples.Count;
+    public bool IsReadOnly => Status == LessonStatus.Archived;
 }
 
 public sealed record LessonExampleDetails(Guid Id, string EvidenceSentence, string Paraphrase, int SortOrder);

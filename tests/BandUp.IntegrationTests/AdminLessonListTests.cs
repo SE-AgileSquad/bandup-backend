@@ -69,6 +69,13 @@ public sealed class AdminLessonListTests(BandUpTestEnvironment environment)
             $"/api/admin/lessons?search=missing-{marker}&status=Draft");
         missing.TotalCount.ShouldBe(0);
         missing.Items.ShouldBeEmpty();
+        PagedResult<LessonSummary> byType = await ReadPageAsync(client, $"{path}&questionType=TrueFalseNotGiven");
+        byType.TotalCount.ShouldBe(1);
+        byType.Items.Single().Id.ShouldBe(draft.Id);
+        PagedResult<LessonSummary> combined = await ReadPageAsync(client,
+            $"{path}&questionType=SentenceCompletion&status=Archived&pageSize=1");
+        combined.TotalCount.ShouldBe(1);
+        combined.Items.Single().Id.ShouldBe(archived.Id);
         PagedResult<LessonSummary> clamped = await ReadPageAsync(client, $"{path}&page=0&pageSize=1000");
         clamped.Page.ShouldBe(1);
         clamped.PageSize.ShouldBe(100);

@@ -184,6 +184,8 @@ public sealed class AdminContentRequestTests
     [InlineData("lessons", "status=Unknown")]
     [InlineData("lessons", "status=999")]
     [InlineData("lessons", "search=")]
+    [InlineData("lessons", "questionType=Unknown")]
+    [InlineData("lessons", "questionType=999")]
     public async Task Invalid_Content_Filters_Are_Rejected_Before_Reading_The_Database(string resource, string filter)
     {
         Guid actorId = Guid.CreateVersion7();
@@ -218,6 +220,28 @@ public sealed class AdminContentRequestTests
         request.Headers.Add("X-Requested-With", "bandup");
         using HttpResponseMessage ordinaryUser = await client.SendAsync(request);
         ordinaryUser.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Theory]
+    [InlineData("GET", "")]
+    [InlineData("POST", "")]
+    [InlineData("PUT", "/order")]
+    public async Task Lesson_Example_Collection_Actions_Reject_Anonymous_And_Ordinary_Users(string method, string suffix)
+    {
+        await using AuthorizationApiFactory factory = new();
+        using HttpClient client = factory.CreateClient();
+        string path = $"/api/admin/lessons/{Guid.NewGuid()}/examples{suffix}";
+        using HttpRequestMessage anonymousRequest = new(new HttpMethod(method), path);
+        using HttpResponseMessage anonymous = await client.SendAsync(anonymousRequest);
+        anonymous.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+
+        string token = factory.Services.GetRequiredService<ITokenService>()
+            .CreateAccessToken(Guid.CreateVersion7(), "User", TimeProvider.System.GetUtcNow()).Value;
+        using HttpRequestMessage request = new(new HttpMethod(method), path);
+        request.Headers.Add("Cookie", $"bu_at={token}");
+        request.Headers.Add("X-Requested-With", "bandup");
+        using HttpResponseMessage denied = await client.SendAsync(request);
+        denied.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
     private sealed class AuthorizationApiFactory(
