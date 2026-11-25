@@ -4,6 +4,9 @@ public sealed class AuthSettings
 {
     public const string SectionName = "Auth";
 
+    // JWT validation and revocation retention must cover the same acceptance window.
+    public static readonly TimeSpan AccessTokenClockSkew = TimeSpan.FromSeconds(30);
+
     /// <summary>
     /// HMAC key for the access token. Supplied by user secrets or the environment, never by a
     /// settings file. At least 32 characters.

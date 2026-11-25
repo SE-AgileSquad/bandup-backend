@@ -12,4 +12,5 @@ public sealed record LoginResult(
     string DisplayName,
     string Role,
     AccessToken AccessToken,
-    string RefreshToken);
+    string RefreshToken,
+    DateTimeOffset RefreshTokenExpiresAt);

@@ -14,8 +14,8 @@ rendering tool without any other document.
 ## 1. What the system is
 
 BandUp is an IELTS Reading and Writing preparation platform. This repository contains its
-**backend foundation**: the structure, conventions and infrastructure on which product
-features are built, plus one reference feature that demonstrates the whole pattern.
+backend foundation, the System reference feature, cookie-based Identity sessions, and signup
+credit accounts in Billing. Registration, login, profile, refresh and logout are implemented.
 
 It is a **modular monolith**: a single deployable API, a single Worker process, and one
 database. Modules are separated by convention and enforced by tests, not by network
@@ -80,7 +80,7 @@ a database, a broker or a server. Swapping a technology touches Infrastructure o
 API and Worker cannot reference each other, so neither can accidentally become the other.
 
 **This is not a convention; it is enforced.** Architecture tests read the compiled assemblies
-and the project files and fail the build on a wrong-direction reference, including a
+and the project files and fail the test run on a wrong-direction reference, including a
 `ProjectReference` that is merely unused.
 
 ---
@@ -129,8 +129,9 @@ Three things are worth stating explicitly:
 - **Both hosts declare the RabbitMQ topology at startup.** Declaring is idempotent, so the
   overlap is harmless, and it guarantees the exchange exists before either process publishes
   or consumes.
-- **Redis is a cache, not a source of truth.** Losing it costs a cold cache and a wider
-  duplicate window for consumers, never data.
+- **Redis also holds access-JWT revocation entries.** Cache reads used for authentication
+  fail open on Redis outage, so logout enforcement has an explicit availability limit.
+  Logout writes fail the command on outage. PostgreSQL and Redis have no shared transaction.
 
 ---
 
@@ -189,6 +190,32 @@ pipeline, so a read can never open a transaction.
 
 On a failed `Result` or an exception, the buffer is **discarded** and the transaction rolled
 back — the message is never published, so a consumer cannot observe a row that was undone.
+
+### Identity session flow
+
+The HTTP pipeline runs request-id/logging/CORS and the CSRF guard before authentication and
+authorization. JWT authentication reads the access cookie, validates it, checks required
+session claims, then checks its JWT id against the revocation store. Authentication challenges
+use the same ProblemDetails/request-id format as handler errors.
+
+| Use case | Application action | HTTP action after dispatch |
+|---|---|---|
+| Login | Validate CAPTCHA/password and issue access/refresh credentials | Write cookies and return user JSON |
+| Refresh | Lock the user's sessions, re-read, rotate a usable refresh row | Replace cookies; empty `200` |
+| Reuse | Revoke all unrevoked refresh rows and return a completed security outcome | Clear cookies; `401 INVALID_REFRESH_TOKEN` |
+| Logout | Revoke the presented owned refresh row and blacklist the validated access JWT | Clear cookies; empty `204` |
+
+Reuse is deliberately carried by a successful command outcome so the transaction commits
+the security action before the endpoint rejects renewal. Ordinary invalid refresh results
+still roll back. Raw credentials stay internal to issuance and cookie transport. The current
+role and configured lifetimes come from the shared issuer and locked user snapshot.
+
+All refresh/logout database changes lock the same user row at Read Committed isolation;
+different users can proceed independently. Clients must coordinate refresh and logout because
+database locks cannot order cookie updates in concurrent HTTP responses. See
+[the browser contract](../auth-client-contract.md) and
+[ADR 0016](../adr/0016-refresh-logout-contracts-and-commit-outcomes.md) for exact race and
+partial-failure behavior.
 
 ---
 
@@ -325,8 +352,10 @@ command and a process must not serve traffic against a stale schema.
 One database, one schema per module. `snake_case` identifiers throughout, applied by a naming
 pass over the model. GUID primary keys generated in the application as version 7 (time-ordered,
 so index locality is preserved and an id is known before the insert). `timestamptz` in UTC.
-Enums stored as text with a `CHECK` constraint. Optimistic concurrency through the system
-column `xmin`. No soft delete, no lazy loading.
+Enums stored as text with a `CHECK` constraint. An `xmin` mapping helper is available;
+Identity session concurrency uses explicit per-user row locks. The current module schemas
+are `identity` (users, refresh tokens) and `billing` (credit accounts, ledger). No soft delete
+or lazy loading.
 
 Migrations are **never** applied on startup. An explicit command applies them and exits with a
 status code, so several instances cannot race and a rollback of the application does not roll
@@ -383,6 +412,9 @@ Each of these has a full record in `docs/adr/`.
 | 0009 | Transaction-aware publishing via a buffer flushed after commit |
 | 0010 | Consumer idempotency through a cache-backed handled set |
 | 0011 | Topology declared at startup by both processes |
+| 0012 | Cookie-carried access JWTs, opaque rotating refresh tokens and CAPTCHA adapters |
+| 0015 | Module schemas and sequential migrations |
+| 0016 | Refresh/logout HTTP contracts, locking and committed revocation outcomes |
 
 ---
 

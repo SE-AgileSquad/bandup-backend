@@ -359,4 +359,89 @@ public sealed class AttemptDomainTests
         attempt.CanAcceptAnswers(Start.AddMinutes(4)).ShouldBeFalse();
         Should.Throw<DomainException>(() => attempt.SaveAnswer(_first.QuestionId, "True", Start.AddMinutes(4)));
     }
+
+    [Fact]
+    public void SubmitAtDeadline_Grades_The_Saved_Answers_And_Records_The_Deadline_As_The_Submission_Time()
+    {
+        Attempt attempt = NewAttempt();
+        attempt.SaveAnswer(_first.QuestionId, "True", Start.AddMinutes(2));
+        attempt.SaveAnswer(_second.QuestionId, "wrong", Start.AddMinutes(3));
+        DateTimeOffset late = Start + Duration + Attempt.SubmissionGrace + TimeSpan.FromMinutes(5);
+
+        attempt.SubmitAtDeadline(Keys, late);
+
+        attempt.Status.ShouldBe(AttemptStatus.Submitted);
+        attempt.SubmittedAt.ShouldBe(attempt.ExpiresAt);
+        attempt.RawScore.ShouldBe(1);
+        attempt.TotalQuestions.ShouldBe(3);
+        attempt.ApproxBand.ShouldBe(BandEstimator.Estimate(1, 3));
+        attempt.Answers.Single(answer => answer.QuestionId == _first.QuestionId).IsCorrect.ShouldBe(true);
+        attempt.Answers.Single(answer => answer.QuestionId == _second.QuestionId).IsCorrect.ShouldBe(false);
+    }
+
+    [Fact]
+    public void SubmitAtDeadline_Without_A_Key_Marks_The_Attempt_As_Closed_By_The_Server()
+    {
+        Attempt attempt = NewAttempt();
+        attempt.SaveAnswer(_first.QuestionId, "True", Start.AddMinutes(2));
+
+        attempt.WasClosedByServer.ShouldBeFalse();
+        attempt.SubmitAtDeadline(Keys, Start + Duration + Attempt.SubmissionGrace + TimeSpan.FromSeconds(1));
+
+        attempt.WasClosedByServer.ShouldBeTrue();
+        attempt.IdempotencyKey.ShouldBeNull();
+    }
+
+    [Fact]
+    public void SubmitAtDeadline_With_A_Key_Stores_It_So_The_Same_Submit_Can_Be_Replayed()
+    {
+        Attempt attempt = NewAttempt();
+        attempt.SaveAnswer(_first.QuestionId, "True", Start.AddMinutes(2));
+
+        attempt.SubmitAtDeadline(Keys, Start + Duration + Attempt.SubmissionGrace + TimeSpan.FromSeconds(1), "key-1");
+
+        attempt.WasClosedByServer.ShouldBeFalse();
+        attempt.IsReplayOf("key-1").ShouldBeTrue();
+        attempt.IsReplayOf("key-2").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SubmitAtDeadline_Throws_While_The_Attempt_Can_Still_Accept_Answers()
+    {
+        Attempt attempt = NewAttempt();
+
+        Should.Throw<DomainException>(() => attempt.SubmitAtDeadline(Keys, Start + Duration));
+        Should.Throw<DomainException>(() => attempt.SubmitAtDeadline(Keys, Start + Duration + Attempt.SubmissionGrace));
+        attempt.Status.ShouldBe(AttemptStatus.InProgress);
+    }
+
+    [Fact]
+    public void SubmitAtDeadline_Throws_For_A_Blank_Key_A_Submitted_Attempt_And_An_Expired_Attempt()
+    {
+        DateTimeOffset late = Start + Duration + Attempt.SubmissionGrace + TimeSpan.FromMinutes(1);
+
+        Attempt blankKey = NewAttempt();
+        Should.Throw<DomainException>(() => blankKey.SubmitAtDeadline(Keys, late, " "));
+        blankKey.Status.ShouldBe(AttemptStatus.InProgress);
+
+        Attempt submitted = NewAttempt();
+        submitted.Submit([], Keys, "key-1", Start.AddMinutes(3));
+        Should.Throw<DomainException>(() => submitted.SubmitAtDeadline(Keys, late));
+
+        Attempt expired = NewAttempt();
+        expired.Expire(late);
+        Should.Throw<DomainException>(() => expired.SubmitAtDeadline(Keys, late));
+    }
+
+    [Fact]
+    public void SubmitAtDeadline_Twice_Throws_So_An_Attempt_Is_Never_Graded_Twice()
+    {
+        Attempt attempt = NewAttempt();
+        attempt.SaveAnswer(_first.QuestionId, "True", Start.AddMinutes(2));
+        DateTimeOffset late = Start + Duration + Attempt.SubmissionGrace + TimeSpan.FromMinutes(1);
+        attempt.SubmitAtDeadline(Keys, late);
+
+        Should.Throw<DomainException>(() => attempt.SubmitAtDeadline(Keys, late));
+        attempt.RawScore.ShouldBe(1);
+    }
 }

@@ -14,14 +14,13 @@ public sealed class CurrentUser(IHttpContextAccessor accessor) : ICurrentUser
 {
     private ClaimsPrincipal? Principal => accessor.HttpContext?.User;
 
-    public Guid? UserId =>
-        Guid.TryParse(FindValue(IdentityClaimTypes.Subject, ClaimTypes.NameIdentifier), out Guid id)
-            ? id
-            : null;
+    public Guid? UserId => AccessToken?.UserId;
 
-    public string? Role => FindValue(IdentityClaimTypes.Role, ClaimTypes.Role);
+    public string? Role => IsAuthenticated ? FindValue(IdentityClaimTypes.Role, ClaimTypes.Role) : null;
 
     public bool IsAuthenticated => Principal?.Identity?.IsAuthenticated ?? false;
+
+    public AccessTokenIdentity? AccessToken => AccessTokenClaims.Read(Principal);
 
     private string? FindValue(params string[] claimTypes)
     {

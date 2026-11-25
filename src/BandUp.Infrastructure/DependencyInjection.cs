@@ -8,6 +8,7 @@ using BandUp.Application.Features.Identity;
 using BandUp.Application.Features.Learning;
 using BandUp.Application.Features.Reading;
 using BandUp.Infrastructure.Caching;
+using BandUp.Infrastructure.Email;
 using BandUp.Infrastructure.Configuration;
 using BandUp.Infrastructure.Hosting;
 using BandUp.Infrastructure.Messaging;
@@ -44,6 +45,7 @@ public static class DependencyInjection
         services.AddCaching(configuration);
         services.AddMessaging(configuration);
         services.AddSecurity(configuration);
+        services.AddEmailDelivery();
         services.AddBilling();
 
         return services;
@@ -77,6 +79,24 @@ public static class DependencyInjection
         // Validation runs when ITokenService is first resolved, not at startup. Only the API
         // issues tokens, so only the API fails fast; the Worker never resolves this service.
         services.AddSingleton<ITokenService, JwtTokenService>();
+        services.AddSingleton<ISessionTokenIssuer, SessionTokenIssuer>();
+        services.AddSingleton<IAccessTokenRevocationStore, CachedAccessTokenRevocationStore>();
+
+        services.AddOptions<PasswordResetSettings>()
+            .BindConfiguration(PasswordResetSettings.SectionName)
+            .Validate(settings => PasswordResetCodeProtector.IsValidKey(settings.CodeProtectionKey),
+                "PasswordReset:CodeProtectionKey must be Base64 encoding at least 32 random bytes.")
+            .Validate(settings => ServiceProviders.PasswordResetRateLimit.Contains(settings.RateLimitProvider, StringComparer.OrdinalIgnoreCase),
+                "PasswordReset:RateLimitProvider must be Redis or InMemory.");
+        // The API opts into startup validation. Other hosts do not require a recovery key
+        // unless they resolve recovery services.
+        services.AddSingleton<IPasswordResetCodeProtector, PasswordResetCodeProtector>();
+        services.AddSingleton<PasswordResetRateLimitKeys>();
+        services.AddSingleton<IPasswordResetRateLimiter>(provider =>
+            string.Equals(provider.GetRequiredService<IOptions<PasswordResetSettings>>().Value.RateLimitProvider,
+                ServiceProviders.InMemory, StringComparison.OrdinalIgnoreCase)
+                ? new InMemoryPasswordResetRateLimiter(provider.GetRequiredService<PasswordResetRateLimitKeys>(), provider.GetRequiredService<TimeProvider>())
+                : new RedisPasswordResetRateLimiter(provider.GetRequiredService<IConnectionMultiplexer>(), provider.GetRequiredService<PasswordResetRateLimitKeys>()));
 
         services
             .AddOptions<CaptchaSettings>()
@@ -153,6 +173,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminPassageStore, EfAdminPassageStore>();
         services.AddScoped<IAdminLessonStore, EfAdminLessonStore>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
+        services.AddScoped<IPasswordResetChallengeStore, EfPasswordResetChallengeStore>();
         services.AddScoped<ICreditAccountRepository, EfCreditAccountRepository>();
         services.AddScoped<ICreditLedgerRepository, EfCreditLedgerRepository>();
 
