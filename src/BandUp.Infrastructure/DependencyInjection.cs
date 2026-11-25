@@ -7,6 +7,7 @@ using BandUp.Application.Features.Dashboard.Admin;
 using BandUp.Application.Features.Exams;
 using BandUp.Application.Features.Identity;
 using BandUp.Application.Features.Learning;
+using BandUp.Application.Features.Learning.Admin.Mappings;
 using BandUp.Application.Features.Reading;
 using BandUp.Application.Features.Writing.Admin;
 using BandUp.Infrastructure.Caching;
@@ -175,6 +176,7 @@ public static class DependencyInjection
         services.AddScoped<IVocabularyStore, EfVocabularyStore>();
         services.AddScoped<IAdminPassageStore, EfAdminPassageStore>();
         services.AddScoped<IAdminLessonStore, EfAdminLessonStore>();
+        services.AddScoped<IAdminLessonMappingStore, EfAdminLessonMappingStore>();
         services.AddScoped<IAdminWritingPromptStore, EfAdminWritingPromptStore>();
         services.AddScoped<IAdminDashboardQueries, AdminDashboardQueries>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();

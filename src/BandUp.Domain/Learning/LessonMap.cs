@@ -13,6 +13,17 @@ public sealed class LessonMap : Entity
     public string? ErrorPattern { get; private set; }
     public Guid LessonId { get; private set; }
 
+    public void ChangeLesson(Lesson lesson)
+    {
+        ArgumentNullException.ThrowIfNull(lesson);
+        if (lesson.QuestionType != QuestionType)
+        {
+            throw new DomainException("The mapped lesson must have the same question type.");
+        }
+
+        LessonId = lesson.Id;
+    }
+
     public static LessonMap Create(Lesson lesson, string? errorPattern = null)
     {
         ArgumentNullException.ThrowIfNull(lesson);
