@@ -3,7 +3,7 @@
 The state of the foundation and implemented product slices, including verified behavior and
 known limits. The detailed auth contract is in [ADR 0016](adr/0016-refresh-logout-contracts-and-commit-outcomes.md).
 
-Last updated: 2026-11-17.
+Last updated: 2026-11-22.
 
 ## Checkpoints
 
@@ -30,6 +30,67 @@ Release build with zero warnings/errors.
 The final branch verification commands and scope are recorded in
 [the auth acceptance matrix](auth-session-acceptance.md).
 
+Password-recovery phase 1 verification on 2026-11-20: the serial Release build completed
+with zero warnings/errors; **133 unit tests and 11 architecture tests passed**, with no
+failures or skips. Test execution required access outside the sandbox to the runner's
+Windows named pipe. Integration tests were not rerun because Docker's Linux engine was
+unavailable. This does not replace the earlier full refresh/logout acceptance run.
+
+Password-recovery phase 2 verification on 2026-11-21: Release build completed with zero
+warnings/errors; **173 unit, 11 architecture and 158 integration tests passed (342 total)**,
+with zero failures/skips. Docker Desktop 28.3.2 was available for the disposable PostgreSQL,
+Redis and RabbitMQ fixtures. The integration run applied the new migration and verified
+replacement rollback, stale-state refresh, shared user locking, unique-index enforcement
+and `xmin` conflict detection. Tests ran outside the sandbox for Windows pipe access.
+The developer's database and user secrets were not changed.
+
+Password-recovery phase 3 verification on 2026-11-22: Release build completed with zero
+warnings/errors; **202 unit, 11 architecture and 168 integration tests passed (381 total)**,
+with zero failures/skips. Docker Desktop 28.3.2 supplied the disposable dependencies, including
+`axllent/mailpit:v1.27.0` for real local HTTP email capture. Tests verify request/resend,
+unknown/inactive acknowledgement, save/commit failure rollback without delivery, atomic
+Redis quotas, response timing, expiry handling and sanitized background-delivery failures.
+The shared API fixture explicitly selects offline email defaults, independently of developer
+email settings. Tests ran outside the sandbox for Windows pipe access. No developer database,
+user secrets or production email provider were changed/configured. No new migration is needed.
+
+Password-recovery phase 4 verification on 2026-11-22: Release build completed with zero
+warnings/errors; **222 unit, 11 architecture and 181 integration tests passed (414 total)**,
+with zero failures/skips. Tests verify committed incorrect-guess counters, expiry after lock
+waits and hashing, one-use code consumption, atomic password/session changes, save/commit
+rollback without notification, concurrent resets and reset/refresh serialization. Successful
+reset is also checked against old/new password login and post-commit notification state.
+Docker Desktop 28.3.2 supplied disposable dependencies. Tests ran outside the sandbox for
+Windows pipe access. No developer database, user secrets or real email service were changed.
+Recovery endpoints and cookie clearing remain phase 5, using local email; phase 6 connects
+the real email service. No migration or new package is needed for this checkpoint.
+
+Password-recovery phase 5 verification on 2026-11-22: Release build completed with zero
+warnings/errors; **222 unit, 11 architecture and 231 integration tests passed (464 total)**,
+with zero failures/skips. Fifty new HTTP acceptance cases cover the recovery endpoints,
+cookie policy/deletion, generic responses, committed guesses, validation/CSRF, quota mapping
+and outages, connection IP, rollback without delivery, sanitized logs, startup and OpenAPI.
+The local end-to-end case uses real disposable Mailpit/Redis/PostgreSQL and signs in with
+the changed password. API startup rejects missing recovery configuration; the Worker starts
+without the recovery key. Docker Desktop 28.3.2 was available; the optional Compose profile
+validated with the example environment file. Tests ran outside the sandbox for Windows pipe
+access. No developer database, user secrets or real email account were used or modified.
+Native-browser interaction and production email delivery remain unverified; phase 6 connects
+the selected provider. No migration or new package is needed for this checkpoint.
+
+Password-recovery phase 6 adapter verification on 2026-11-22: Release build completed with
+zero warnings/errors; **252 unit, 11 architecture and 236 integration tests passed (499 total)**,
+with zero failures/skips. Thirty new unit cases cover Resend payload/authentication, provider
+selection, credentials/sender validation, redirect/header policy, receipts, provider failures,
+transport errors, timeout and cancellation. Five integration cases check the public recovery
+flow and notification with the real adapter behind an offline HTTP transport, failure privacy,
+committed challenges after rejection and API startup validation. Docker Desktop 28.3.2 supplied
+disposable dependencies. Tests ran outside the sandbox for Windows pipe access. No real API
+key, recipient, developer database or user secrets were used or changed. Live Resend/domain
+authorization, real-inbox delivery and native-browser acceptance remain manual setup checks.
+No migration, SDK or new package was added. The complete setup is in the Resend section of
+[the local guide](auth-local-setup.md#7-use-resend-and-a-real-inbox-in-swagger).
+
 | Project | Covers |
 |---|---|
 | `BandUp.UnitTests` | Pipeline semantics, domain rules, handlers, token issuance/revocation, CAPTCHA adapters and logging |
@@ -45,6 +106,7 @@ The final branch verification commands and scope are recorded in
 | Access revocation | Validated JWT metadata and Redis blacklist enforcement through expiry plus clock skew |
 | Billing signup | Credit account and ledger with the signup grant; `/me` reads the current balance |
 | Auth developer flow | Fake CAPTCHA and Development Swagger header support; [setup guide](auth-local-setup.md) |
+| Password recovery | Request/reset HTTP endpoints, protected one-use codes, quotas, timing, atomic password reset/refresh revocation/cookie clearing, and local or Resend email delivery; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Phases 1–6 implementation and offline checks are in place; live Resend/real-inbox acceptance awaits developer configuration. |
 
 ## Scenario coverage
 
@@ -66,6 +128,7 @@ The final branch verification commands and scope are recorded in
 | AUTH-01 to AUTH-08 | Registration, CAPTCHA behavior, login timing and authenticated profile | Unit + Integration |
 | AUTH-09 | Rotation, expired/inactive rejection, committed reuse revocation and concurrent refresh | Unit + Integration |
 | AUTH-10 | Owner-scoped logout, JWT blacklist, expiry/skew, Redis failures and refresh/logout races | Unit + Integration |
+| AUTH-15 | Email password recovery, one-use codes, quotas, atomic reset/refresh revocation, cookie clearing and local Mailpit/Swagger acceptance | Unit + Integration |
 
 ## Approved adjustments
 
@@ -103,6 +166,7 @@ can be moved without editing the file. See the README section "Ports that cannot
 
 | Gap | Impact | Where it closes |
 |---|---|---|
+| Live Resend/real-inbox acceptance is pending | Adapter and offline HTTP acceptance exist; actual credentials, domain authorization and inbox delivery have not been exercised | Developer setup and Swagger walkthrough in the local setup guide |
 | Sentry is verified only in its disabled state | The enabled path is untested | Deployment step, with a real DSN |
 | SIGTERM specifically is unverified | Windows has no SIGTERM; Ctrl+C exercises the same cancellation path | Deployment step, on Linux |
 | `INF_07` is not tagged `Slow` | It runs with the rest of the suite (~2 s) | When the suite grows enough to need a fast subset |
