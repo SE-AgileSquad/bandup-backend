@@ -1,0 +1,48 @@
+{
+  "submissionId": "018fa525-5529-7770-8df2-b455acbf0ce9",
+  "completedAt": "2026-11-25T10:00:00+00:00",
+  "feedback": {
+    "schemaVersion": "1.0",
+    "scoreLabel": "estimated",
+    "estimatedOverallBand": 6.5,
+    "summary": "Develop the claim with a concrete example.",
+    "criteria": {
+      "tr": {
+        "score": 6,
+        "explanation": "The position is explicit.",
+        "strengths": [],
+        "areasForImprovement": [],
+        "recommendations": [
+          "Explain how bus frequency changes travel choices."
+        ]
+      },
+      "cc": {
+        "score": 6.5,
+        "explanation": "The same claim is repeated.",
+        "strengths": [],
+        "areasForImprovement": [],
+        "recommendations": [
+          "Develop a second paragraph with an example."
+        ]
+      },
+      "lr": {
+        "score": 6,
+        "explanation": "Transport vocabulary fits the topic.",
+        "strengths": [],
+        "areasForImprovement": [],
+        "recommendations": [
+          "Describe a specific transport service."
+        ]
+      },
+      "gra": {
+        "score": 6.5,
+        "explanation": "The sentence uses correct agreement.",
+        "strengths": [],
+        "areasForImprovement": [],
+        "recommendations": [
+          "Use a conditional clause to develop the claim."
+        ]
+      }
+    }
+  }
+}
