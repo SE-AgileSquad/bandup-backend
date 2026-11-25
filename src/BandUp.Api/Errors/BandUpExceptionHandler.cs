@@ -8,8 +8,8 @@ using Serilog.Context;
 namespace BandUp.Api.Errors;
 
 /// <summary>
-/// Turns an unhandled exception into a 500 in the platform's error format. The detail is
-/// always generic: the exception text goes to the log, never to the response.
+/// Preserves client request errors and maps infrastructure faults to the platform's generic
+/// error format. Exception text is never returned to the caller.
 /// </summary>
 public sealed class BandUpExceptionHandler(ILogger<BandUpExceptionHandler> logger) : IExceptionHandler
 {
@@ -25,6 +25,14 @@ public sealed class BandUpExceptionHandler(ILogger<BandUpExceptionHandler> logge
         // context is gone: the request id has to be restored for the line to be traceable.
         using (LogContext.PushProperty(BandUpLogProperties.RequestId, requestId))
         {
+            if (exception is BadHttpRequestException { StatusCode: >= 400 and < 500 } badRequest)
+            {
+                logger.LogWarning("Rejected request while handling {route} with {statusCode}", route, badRequest.StatusCode);
+                await new ProblemResult(ProblemDetailsFactory.ForBadHttpRequest(httpContext, badRequest.StatusCode))
+                    .ExecuteAsync(httpContext);
+                return true;
+            }
+
             if (exception is DomainException)
             {
                 logger.LogError(exception, "Domain invariant violated while handling {route}", route);

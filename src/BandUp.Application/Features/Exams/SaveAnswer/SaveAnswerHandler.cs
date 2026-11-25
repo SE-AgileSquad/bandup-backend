@@ -42,7 +42,7 @@ public sealed class SaveAnswerHandler(
 
         if (!attempt.CanAcceptAnswers(now))
         {
-            return Result<AttemptStateDto>.Failure(ExamErrors.AttemptExpired());
+            return Result<AttemptStateDto>.Failure(ExamErrors.AnswerAfterDeadline());
         }
 
         IReadOnlyList<Guid> questionIds =

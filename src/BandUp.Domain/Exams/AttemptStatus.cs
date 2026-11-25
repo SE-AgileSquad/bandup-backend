@@ -9,8 +9,8 @@ public enum AttemptStatus
     Submitted,
 
     /// <summary>
-    /// The deadline and the grace period passed before the attempt was submitted, so no result
-    /// was recorded. The learner can start the passage again, which makes a new attempt.
+    /// The deadline and the grace period passed with no answer saved, so there was nothing to grade
+    /// and no result was recorded. The learner can start the passage again, which makes a new attempt.
     /// </summary>
     Expired,
 }

@@ -10,7 +10,8 @@ namespace BandUp.IntegrationTests;
 
 /// <summary>
 /// EX-12 to EX-24. Submitting an attempt exactly once: grading, idempotent retries, concurrent
-/// submits, the result with its answer key, and what happens when time runs out.
+/// submits, the result with its answer key, and what happens when time runs out: the answers
+/// already saved are graded as of the deadline, and a sitting with nothing saved records no result.
 /// </summary>
 [Collection(BandUpCollection.Name)]
 public sealed class ExamSubmissionTests(BandUpTestEnvironment environment)
@@ -256,7 +257,7 @@ public sealed class ExamSubmissionTests(BandUpTestEnvironment environment)
     }
 
     [Fact]
-    public async Task EX_22_Submitting_After_The_Grace_Period_Is_Refused_And_Records_No_Result()
+    public async Task EX_22_Submitting_After_The_Grace_Period_Grades_The_Saved_Answers_As_Of_The_Deadline()
     {
         TestClock clock = new();
         await using BandUpApiFactory factory = CreateFactory(clock);
@@ -265,31 +266,41 @@ public sealed class ExamSubmissionTests(BandUpTestEnvironment environment)
             await StartNewAsync(client, factory, "ex22");
         await SaveAsync(client, user, attemptId, passage.TrueFalseQuestionId, "True");
 
+        // The request is too late, so the correct answer it carries is ignored.
         clock.Advance(TimeSpan.FromMinutes(21));
+        string key = Guid.NewGuid().ToString();
         HttpResponseMessage response = await SubmitAsync(
             client,
             user,
             attemptId,
-            Guid.NewGuid().ToString(),
+            key,
             new[] { new { questionId = passage.CompletionQuestionId, selectedAnswer = "nests" } });
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-        (await ReadJsonAsync(response)).GetProperty("code").GetString().ShouldBe("ATTEMPT_EXPIRED");
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-        // The sitting reads as expired and has no result, not even one built from saved answers.
+        JsonElement body = await ReadJsonAsync(response);
+        body.GetProperty("rawScore").GetInt32().ShouldBe(1);
+        body.GetProperty("totalQuestions").GetInt32().ShouldBe(2);
+        body.GetProperty("approxBand").GetDecimal().ShouldBe(5.5m);
+        body.GetProperty("timeSpentSeconds").GetInt32().ShouldBe(20 * 60);
+
+        JsonElement[] questions = body.GetProperty("questions").EnumerateArray().ToArray();
+        questions[0].GetProperty("isCorrect").GetBoolean().ShouldBeTrue();
+        questions[1].GetProperty("selectedAnswer").ValueKind.ShouldBe(JsonValueKind.Null);
+        questions[1].GetProperty("isCorrect").GetBoolean().ShouldBeFalse();
+
         JsonElement state = await GetJsonAsync(client, user, $"{AttemptsUrl}/{attemptId}");
-        state.GetProperty("status").GetString().ShouldBe("Expired");
-        state.GetProperty("remainingSeconds").GetInt32().ShouldBe(0);
+        state.GetProperty("status").GetString().ShouldBe("Submitted");
 
-        using HttpRequestMessage resultRequest = ContentTestData.Get($"{AttemptsUrl}/{attemptId}/result", user);
-        HttpResponseMessage result = await client.SendAsync(resultRequest);
+        // Retrying with the same key returns the same result.
+        HttpResponseMessage retry = await SubmitAsync(client, user, attemptId, key);
 
-        result.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-        (await ReadJsonAsync(result)).GetProperty("code").GetString().ShouldBe("ATTEMPT_EXPIRED");
+        retry.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await ReadJsonAsync(retry)).GetProperty("rawScore").GetInt32().ShouldBe(1);
     }
 
     [Fact]
-    public async Task EX_23_Starting_After_An_Expired_Attempt_Expires_It_Without_A_Result_And_Begins_A_New_One()
+    public async Task EX_23_Starting_After_An_Abandoned_Attempt_Grades_Its_Saved_Answers_And_Begins_A_New_One()
     {
         TestClock clock = new();
         await using BandUpApiFactory factory = CreateFactory(clock);
@@ -306,15 +317,38 @@ public sealed class ExamSubmissionTests(BandUpTestEnvironment environment)
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         (await ReadJsonAsync(response)).GetProperty("id").GetGuid().ShouldNotBe(oldAttemptId);
 
-        // The old sitting ran out of time, so it was closed as expired and recorded no score.
+        // The old sitting was graded from what it had saved, as of its deadline.
         JsonElement oldState = await GetJsonAsync(client, user, $"{AttemptsUrl}/{oldAttemptId}");
-        oldState.GetProperty("status").GetString().ShouldBe("Expired");
+        oldState.GetProperty("status").GetString().ShouldBe("Submitted");
 
-        using HttpRequestMessage oldResultRequest = ContentTestData.Get($"{AttemptsUrl}/{oldAttemptId}/result", user);
-        HttpResponseMessage oldResult = await client.SendAsync(oldResultRequest);
+        JsonElement oldResult = await GetJsonAsync(client, user, $"{AttemptsUrl}/{oldAttemptId}/result");
+        oldResult.GetProperty("rawScore").GetInt32().ShouldBe(1);
+        oldResult.GetProperty("timeSpentSeconds").GetInt32().ShouldBe(20 * 60);
+    }
 
-        oldResult.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-        (await ReadJsonAsync(oldResult)).GetProperty("code").GetString().ShouldBe("ATTEMPT_EXPIRED");
+    [Fact]
+    public async Task EX_23b_Submitting_After_The_Grace_Period_With_Nothing_Saved_Records_No_Result()
+    {
+        TestClock clock = new();
+        await using BandUpApiFactory factory = CreateFactory(clock);
+        using HttpClient client = ContentTestData.CreateClient(factory);
+        (ContentTestData.TestUser user, _, Guid attemptId) = await StartNewAsync(client, factory, "ex23b");
+
+        clock.Advance(TimeSpan.FromMinutes(21));
+        HttpResponseMessage response = await SubmitAsync(client, user, attemptId, Guid.NewGuid().ToString());
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await ReadJsonAsync(response)).GetProperty("code").GetString().ShouldBe("ATTEMPT_EXPIRED");
+
+        JsonElement state = await GetJsonAsync(client, user, $"{AttemptsUrl}/{attemptId}");
+        state.GetProperty("status").GetString().ShouldBe("Expired");
+        state.GetProperty("remainingSeconds").GetInt32().ShouldBe(0);
+
+        using HttpRequestMessage resultRequest = ContentTestData.Get($"{AttemptsUrl}/{attemptId}/result", user);
+        HttpResponseMessage result = await client.SendAsync(resultRequest);
+
+        result.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await ReadJsonAsync(result)).GetProperty("code").GetString().ShouldBe("ATTEMPT_EXPIRED");
     }
 
     [Fact]

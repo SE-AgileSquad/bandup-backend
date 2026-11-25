@@ -95,9 +95,11 @@ public sealed class Attempt : Entity
             : Status;
 
     /// <summary>
-    /// Closes a sitting that ran out of time without being submitted. No score is recorded: the
-    /// learner is told that time ran out and starts the passage again. Allowed only once the
-    /// deadline and grace have passed; calling it again on an expired attempt does nothing.
+    /// Closes a sitting that ran out of time with no saved answer at all. There is nothing to
+    /// grade, so no score is recorded: the learner is told that time ran out and starts the
+    /// passage again. A sitting with saved answers is closed with <see cref="SubmitAtDeadline"/>
+    /// instead. Allowed only once the deadline and grace have passed; calling it again on an
+    /// expired attempt does nothing.
     /// </summary>
     public void Expire(DateTimeOffset now)
     {
@@ -142,6 +144,12 @@ public sealed class Attempt : Entity
         Status == AttemptStatus.Submitted && IdempotencyKey == idempotencyKey;
 
     /// <summary>
+    /// True when the server graded the saved answers at the deadline on its own, with no submit
+    /// request behind it. A submit that arrives afterwards is answered with that same result.
+    /// </summary>
+    public bool WasClosedByServer => Status == AttemptStatus.Submitted && IdempotencyKey is null;
+
+    /// <summary>
     /// Saves or replaces the answer to one question; a blank answer removes it.
     /// </summary>
     public void SaveAnswer(Guid questionId, string? selectedAnswer, DateTimeOffset now)
@@ -158,8 +166,8 @@ public sealed class Attempt : Entity
     /// Closes the attempt and grades it against the answer keys, then records the approximate
     /// band for the score. The answers sent with the submission are applied first. It is allowed
     /// only while the attempt still accepts answers (the deadline plus grace): after that the
-    /// sitting is expired and records no result. A repeat call throws, so an attempt can never be
-    /// graded twice.
+    /// sitting is closed with <see cref="SubmitAtDeadline"/> from the answers already saved. A
+    /// repeat call throws, so an attempt can never be graded twice.
     /// </summary>
     public void Submit(
         IReadOnlyCollection<SubmittedAnswer> finalAnswers,
@@ -206,6 +214,57 @@ public sealed class Attempt : Entity
             ApplyAnswer(answer.QuestionId, answer.SelectedAnswer);
         }
 
+        Grade(keysByQuestion, now, idempotencyKey);
+    }
+
+    /// <summary>
+    /// Closes a sitting whose deadline and grace have passed by grading the answers that were
+    /// already saved, as if it had been submitted at the deadline. Answers that arrive later are
+    /// never part of it. The submission time is recorded as the deadline, so the time spent
+    /// never exceeds the duration. It is allowed only once the attempt can no longer accept
+    /// answers, and a repeat call throws, so an attempt can never be graded twice.
+    /// <paramref name="idempotencyKey"/> is the key of a late submit that triggered the closing,
+    /// or null when the server closed the sitting on its own.
+    /// </summary>
+    public void SubmitAtDeadline(
+        IReadOnlyCollection<ScoringKey> keys,
+        DateTimeOffset now,
+        string? idempotencyKey = null)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+
+        if (Status == AttemptStatus.Submitted)
+        {
+            throw new DomainException("This attempt was already submitted.");
+        }
+
+        if (Status == AttemptStatus.Expired)
+        {
+            throw new DomainException("An expired attempt records no result.");
+        }
+
+        if (CanAcceptAnswers(now))
+        {
+            throw new DomainException("This attempt still has time left and cannot be closed at its deadline.");
+        }
+
+        if (idempotencyKey is not null && string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            throw new DomainException("An idempotency key cannot be blank.");
+        }
+
+        Grade(keys.ToDictionary(key => key.QuestionId), ExpiresAt, idempotencyKey);
+    }
+
+    /// <summary>
+    /// Grades every saved answer, then records the score, the band and the submission. The only
+    /// place an attempt moves to submitted, so both ways of closing it score the same way.
+    /// </summary>
+    private void Grade(
+        Dictionary<Guid, ScoringKey> keysByQuestion,
+        DateTimeOffset submittedAt,
+        string? idempotencyKey)
+    {
         int score = 0;
 
         foreach (AttemptAnswer answer in _answers)
@@ -222,7 +281,7 @@ public sealed class Attempt : Entity
         }
 
         Status = AttemptStatus.Submitted;
-        SubmittedAt = AtDatabasePrecision(now);
+        SubmittedAt = AtDatabasePrecision(submittedAt);
         RawScore = score;
         TotalQuestions = keysByQuestion.Count;
         ApproxBand = BandEstimator.Estimate(score, keysByQuestion.Count);

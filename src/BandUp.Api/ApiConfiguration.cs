@@ -66,6 +66,7 @@ public static class ApiConfiguration
         // Infrastructure; this host opts into running them at startup. The Worker never resolves
         // ITokenService, so it does not inherit the requirement for a key it would never use.
         services.AddOptions<AuthSettings>().ValidateOnStart();
+        services.AddOptions<PasswordResetSettings>().ValidateOnStart();
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
@@ -163,7 +164,29 @@ public static class ApiConfiguration
         if (swagger.Value.Enabled)
         {
             app.UseSwagger();
-            app.UseSwaggerUI(options => options.RoutePrefix = "swagger");
+            app.UseSwaggerUI(options =>
+            {
+                options.RoutePrefix = "swagger";
+
+                if (app.Environment.IsDevelopment())
+                {
+                    options.UseRequestInterceptor("""
+                        function (request) {
+                            const url = new URL(request.url, window.location.href);
+                            const method = (request.method || 'GET').toUpperCase();
+                            const headers = request.headers || {};
+                            const contentType = Object.entries(headers).find(([name]) => name.toLowerCase() === 'content-type');
+                            if (url.origin === window.location.origin && url.pathname.startsWith('/api/') &&
+                                !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method) &&
+                                contentType && String(contentType[1]).toLowerCase().startsWith('application/json')) {
+                                headers['X-Requested-With'] = 'bandup';
+                                request.headers = headers;
+                            }
+                            return request;
+                        }
+                        """);
+                }
+            });
         }
 
         return app;
