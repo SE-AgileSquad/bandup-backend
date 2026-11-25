@@ -10,8 +10,9 @@ namespace BandUp.Application.Features.Exams.SubmitAttempt;
 /// take turns: the first grades it, the others find it already submitted and either replay the
 /// stored result (same idempotency key) or are refused (a different key). Grading happens only
 /// inside the one transition the aggregate allows, so no sequence of retries can score twice.
-/// A submission that arrives after the deadline and grace is refused as expired and records no
-/// result.
+/// A submission that arrives after the deadline and grace is too late: the answers in it are
+/// ignored and the sitting is graded from the answers already saved, as of the deadline. With
+/// nothing saved there is nothing to grade, and the submission is refused as expired.
 /// </summary>
 public sealed class SubmitAttemptHandler(
     ICurrentUser currentUser,
@@ -42,18 +43,38 @@ public sealed class SubmitAttemptHandler(
 
         if (attempt.Status == AttemptStatus.Submitted)
         {
-            return attempt.IsReplayOf(command.IdempotencyKey)
+            // A sitting the server already closed at its deadline answers any submit with that
+            // same result, so a slow request that loses the race to a refresh still gets it.
+            return attempt.IsReplayOf(command.IdempotencyKey) || attempt.WasClosedByServer
                 ? Result<AttemptResultDto>.Success(await resultBuilder.BuildAsync(attempt, cancellationToken))
                 : Result<AttemptResultDto>.Failure(ExamErrors.AttemptAlreadySubmitted());
         }
 
         DateTimeOffset now = timeProvider.GetUtcNow();
 
-        // Past the deadline plus grace the sitting is over. Nothing is graded and no result is
-        // recorded; this also covers an attempt already closed as expired.
+        // Past the deadline plus grace this request is too late, and so are the answers in it.
+        // What the learner saved before the deadline is graded instead; with nothing saved (or an
+        // attempt already closed as expired) there is no result.
         if (!attempt.CanAcceptAnswers(now))
         {
-            return Result<AttemptResultDto>.Failure(ExamErrors.AttemptExpired());
+            if (attempt.Status != AttemptStatus.InProgress || attempt.Answers.Count == 0)
+            {
+                return Result<AttemptResultDto>.Failure(ExamErrors.AttemptExpired());
+            }
+
+            if (await attempts.IdempotencyKeyUsedAsync(userId, command.IdempotencyKey, cancellationToken))
+            {
+                return Result<AttemptResultDto>.Failure(ExamErrors.IdempotencyKeyReused());
+            }
+
+            await AttemptClosing.CloseAsync(
+                attempt,
+                answerKeyQueries,
+                now,
+                command.IdempotencyKey,
+                cancellationToken);
+
+            return Result<AttemptResultDto>.Success(await resultBuilder.BuildAsync(attempt, cancellationToken));
         }
 
         // The attempt is still open, so any attempt already holding this key is another one.
