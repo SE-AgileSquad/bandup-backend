@@ -98,6 +98,20 @@ public static class DependencyInjection
                 ? new InMemoryPasswordResetRateLimiter(provider.GetRequiredService<PasswordResetRateLimitKeys>(), provider.GetRequiredService<TimeProvider>())
                 : new RedisPasswordResetRateLimiter(provider.GetRequiredService<IConnectionMultiplexer>(), provider.GetRequiredService<PasswordResetRateLimitKeys>()));
 
+        services.AddOptions<OtpLoginSettings>()
+            .BindConfiguration(OtpLoginSettings.SectionName)
+            .Validate(settings => OtpLoginCodeProtector.IsValidKey(settings.CodeProtectionKey),
+                "OtpLogin:CodeProtectionKey must be Base64 encoding at least 32 random bytes.")
+            .Validate(settings => ServiceProviders.OtpLoginRateLimit.Contains(settings.RateLimitProvider, StringComparer.OrdinalIgnoreCase),
+                "OtpLogin:RateLimitProvider must be Redis or InMemory.");
+        services.AddSingleton<IOtpLoginCodeProtector, OtpLoginCodeProtector>();
+        services.AddSingleton<OtpLoginRateLimitKeys>();
+        services.AddSingleton<IOtpLoginRateLimiter>(provider =>
+            string.Equals(provider.GetRequiredService<IOptions<OtpLoginSettings>>().Value.RateLimitProvider,
+                ServiceProviders.InMemory, StringComparison.OrdinalIgnoreCase)
+                ? new InMemoryOtpLoginRateLimiter(provider.GetRequiredService<OtpLoginRateLimitKeys>(), provider.GetRequiredService<TimeProvider>())
+                : new RedisOtpLoginRateLimiter(provider.GetRequiredService<IConnectionMultiplexer>(), provider.GetRequiredService<OtpLoginRateLimitKeys>()));
+
         services
             .AddOptions<CaptchaSettings>()
             .BindConfiguration(CaptchaSettings.SectionName)
@@ -174,6 +188,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminLessonStore, EfAdminLessonStore>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
         services.AddScoped<IPasswordResetChallengeStore, EfPasswordResetChallengeStore>();
+        services.AddScoped<IOtpLoginChallengeStore, EfOtpLoginChallengeStore>();
         services.AddScoped<ICreditAccountRepository, EfCreditAccountRepository>();
         services.AddScoped<ICreditLedgerRepository, EfCreditLedgerRepository>();
 
