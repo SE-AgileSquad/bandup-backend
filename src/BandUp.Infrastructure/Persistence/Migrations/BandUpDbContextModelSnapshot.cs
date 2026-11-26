@@ -390,6 +390,80 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                     b.ToTable("attempt_answers", "exams");
                 });
 
+            modelBuilder.Entity("BandUp.Domain.Identity.OtpLoginChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CodeMac")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("code_mac");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<int>("FailedAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("failed_attempts");
+
+                    b.Property<DateTimeOffset?>("InvalidatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("invalidated_at");
+
+                    b.Property<int>("MaxFailedAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_failed_attempts");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_otp_login_challenges");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_otp_login_open_user")
+                        .HasFilter("consumed_at IS NULL AND invalidated_at IS NULL");
+
+                    b.HasIndex("UserId", "CreatedAt", "Id")
+                        .HasDatabaseName("ix_otp_login_user_created");
+
+                    b.ToTable("otp_login_challenges", "identity", t =>
+                        {
+                            t.HasCheckConstraint("otp_login_attempts_check", "max_failed_attempts BETWEEN 1 AND 100 AND failed_attempts BETWEEN 0 AND max_failed_attempts");
+
+                            t.HasCheckConstraint("otp_login_consumption_check", "consumed_at IS NULL OR (consumed_at >= created_at AND consumed_at < expires_at AND failed_attempts < max_failed_attempts)");
+
+                            t.HasCheckConstraint("otp_login_invalidation_check", "invalidated_at IS NULL OR invalidated_at >= created_at");
+
+                            t.HasCheckConstraint("otp_login_mac_check", "code_mac ~ '^[0-9a-f]{64}$'");
+
+                            t.HasCheckConstraint("otp_login_terminal_state_check", "consumed_at IS NULL OR invalidated_at IS NULL");
+
+                            t.HasCheckConstraint("otp_login_times_check", "expires_at > created_at");
+                        });
+                });
+
             modelBuilder.Entity("BandUp.Domain.Identity.PasswordResetChallenge", b =>
                 {
                     b.Property<Guid>("Id")
@@ -946,6 +1020,16 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_attempt_answers_questions_question_id");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Identity.OtpLoginChallenge", b =>
+                {
+                    b.HasOne("BandUp.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_otp_login_challenges_users_user_id");
                 });
 
             modelBuilder.Entity("BandUp.Domain.Identity.PasswordResetChallenge", b =>

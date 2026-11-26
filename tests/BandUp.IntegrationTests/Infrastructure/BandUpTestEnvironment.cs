@@ -76,6 +76,8 @@ public sealed class BandUpTestEnvironment : IAsyncLifetime
         ["Captcha:Provider"] = "Fake",
         ["PasswordReset:CodeProtectionKey"] = Convert.ToBase64String(Enumerable.Repeat((byte)42, 32).ToArray()),
         ["PasswordReset:RateLimitProvider"] = "InMemory",
+        ["OtpLogin:CodeProtectionKey"] = Convert.ToBase64String(Enumerable.Repeat((byte)43, 32).ToArray()),
+        ["OtpLogin:RateLimitProvider"] = "InMemory",
         ["Email:Provider"] = "InMemory",
         ["Email:FromEmail"] = "tests@bandup.local",
         ["Email:FromName"] = "BandUp tests",

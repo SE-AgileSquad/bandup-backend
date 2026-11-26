@@ -12,6 +12,8 @@ Names can be configured, so clients should treat the cookies as browser-managed 
 |---|---|---|---|
 | `POST /api/auth/register` | CAPTCHA and registration JSON | `201`, account created; no login | CAPTCHA/validation/conflict errors |
 | `POST /api/auth/login` | CAPTCHA and login JSON | `200`, user JSON and two cookies | `401 INVALID_CREDENTIALS` |
+| `POST /api/auth/otp/request` | Email and CAPTCHA token JSON | Generic `202`; no cookie changes | Validation/CAPTCHA errors; IP-wide `429 OTP_LOGIN_RATE_LIMITED` |
+| `POST /api/auth/otp/verify` | Email and six-digit code string JSON | `200`, user JSON and the normal two session cookies | Generic `401 INVALID_OTP_LOGIN_CODE`; validation `400`; IP-wide `429`; cookies preserved |
 | `GET /api/auth/me` | Valid access cookie | `200`, current profile | `401 UNAUTHORIZED` |
 | `POST /api/auth/refresh` | Refresh cookie; access cookie may be missing, expired or blacklisted | Empty `200`, replacement cookies | `401 INVALID_REFRESH_TOKEN`, both cookies deleted |
 | `POST /api/auth/logout` | Valid access cookie; optional presented refresh cookie | Empty `204`, both cookies deleted | `401 UNAUTHORIZED`, no cookie deletion |
@@ -97,6 +99,38 @@ Recovery does not require CAPTCHA or an authenticated session. The existing CSRF
 applies whenever either session cookie is sent. See [local setup](auth-local-setup.md#6-test-forgotten-password-recovery-with-a-local-inbox)
 for the Swagger/Mailpit walkthrough and [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md)
 for code lifetime, attempt/resend limits, delivery guarantees and access-token policy.
+
+## Email OTP sign-in
+
+Both routes are available in Swagger. Password login remains available. This flow signs in
+an existing active account without a password; it does not enroll a second factor.
+
+| Route | Client JSON | Success | Rejection |
+|---|---|---|---|
+| `POST /api/auth/otp/request` | Email and CAPTCHA token | Generic `202`; no cookie changes | Validation/CAPTCHA errors; IP-wide `429 OTP_LOGIN_RATE_LIMITED` |
+| `POST /api/auth/otp/verify` | Email and six-digit code string | `200`, public user JSON and the normal two session cookies after commit | Generic `401 INVALID_OTP_LOGIN_CODE`; validation `400`; IP-wide `429`; cookies preserved |
+
+The verification body is `{ "email": "learner@example.com", "code": "012345" }`.
+Requesting the email is a separate operation with
+`{ "email": "learner@example.com", "captchaToken": "fake-captcha-token" }` in local Fake mode.
+Client IP and User-Agent come from HTTP connection/headers, never client JSON. Extra JSON
+fields do not override server metadata or supply passwords/session credentials.
+
+Show the same acknowledgement for every `202`; it does not confirm eligibility or delivery.
+Display OTP verification's `401` on the login form without calling refresh or automatically
+retrying the code. Refresh-and-retry applies to protected resource requests, not a failed
+login credential. Keep the existing JSON/CSRF headers when cookies accompany either request.
+This flow is for existing active accounts and does not auto-register users or award credits.
+See [ADR 0018](adr/0018-email-otp-login-contracts-and-policy.md) for limits, purpose separation
+and commit semantics. See [the setup guide](auth-local-setup.md#8-sign-in-with-an-email-otp)
+for configuration and a complete Swagger walkthrough.
+
+Codes expire in ten minutes, permit five incorrect guesses and can be requested again after
+60 seconds, subject to independent email/IP window quotas. A new code supersedes the old
+login challenge without affecting password-reset challenges. After `200`, fetch `/me` for
+the actual credit balance; the login response keeps the existing balance placeholder.
+Password reset invalidates all pending login challenges and revokes existing refresh sessions
+atomically. Already-issued access JWTs on other devices retain their normal expiry.
 
 ## Failure behavior
 

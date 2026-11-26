@@ -109,6 +109,29 @@ finally {
 dotnet user-secrets set 'PasswordReset:RateLimitProvider' 'Redis' --project src/BandUp.Api
 ```
 
+Email OTP sign-in also requires its own protection key at API startup, including when using
+password login only. If `OtpLogin:CodeProtectionKey` is already configured, keep it. Otherwise
+generate it once; do not clear user secrets or replace the JWT/recovery keys:
+
+```powershell
+$bandupOtpKeyBytes = New-Object byte[] 32
+$bandupOtpRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+try {
+    $bandupOtpRng.GetBytes($bandupOtpKeyBytes)
+    dotnet user-secrets set 'OtpLogin:CodeProtectionKey' ([Convert]::ToBase64String($bandupOtpKeyBytes)) --project src/BandUp.Api
+}
+finally {
+    $bandupOtpRng.Dispose()
+}
+dotnet user-secrets set 'OtpLogin:RateLimitProvider' 'Redis' --project src/BandUp.Api
+```
+
+This key protects stored sign-in codes and opaque quota identifiers. It is separate from
+`Email:ResendApiKey`, which authenticates email delivery. The Worker does not need it.
+Rotating the key invalidates pending login codes and changes quota identities; it does not
+invalidate access JWTs. Keep it stable across API instances. `InMemory` quotas are available
+only for single-process offline development/tests; use Redis for shared quotas.
+
 ## 3. Migrate and start the API
 
 ```powershell
@@ -134,6 +157,12 @@ by port. Open `/ready` on the selected origin, then `/swagger`:
 Local HTTP works because `Auth:RequireSecureCookies=false`. The production policy uses HTTPS
 and secure cookies. `HttpOnly` prevents JavaScript from reading tokens; the browser still
 stores and sends the cookies. Same-origin Swagger needs no manual JWT entry.
+
+If startup reports `OtpLogin:CodeProtectionKey must be Base64 encoding at least 32 random
+bytes`, the new OTP key is missing or invalid. Generate and save that one key using section 2,
+then restart. Your Resend API key is not the OTP protection key. Keep existing JWT/recovery
+keys and other user secrets. The API deliberately validates this setting before accepting
+requests; changing the port, running migrations or restarting Docker cannot supply it.
 
 ## 4. Exercise the auth flow in Swagger
 
@@ -436,3 +465,71 @@ dotnet user-secrets set 'Email:FromEmail' 'no-reply@bandup.local' --project src/
 Start the `recovery` profile from section 6 and restart the API. Selecting `InMemory` instead
 also works offline, but its inbox is accessible only through DI/tests. Automated Resend
 tests use a fake HTTP transport and test credentials; they never send real emails.
+
+
+## 8. Sign in with an email OTP
+
+Use the existing Resend configuration from section 7, or the Mailpit inbox from section 6.
+BandUp generates the six-digit code; the selected email adapter delivers it. No new Resend
+account or API key is needed. With Resend's test sender, use the email associated with your
+Resend account. Register that address first if it is not already a BandUp account.
+
+1. Configure `OtpLogin:CodeProtectionKey` and `OtpLogin:RateLimitProvider` as in section 2.
+   Keep the existing database ports/credentials, Resend key/sender, JWT and recovery keys.
+2. Start the Docker dependencies. Stop the running API, apply the new `AddOtpLoginChallenges`
+   migration and restart using section 3. `/ready` should report no pending migrations.
+3. In Swagger, call `POST /api/auth/otp/request`:
+
+```json
+{
+  "email": "your-account@example.com",
+  "captchaToken": "fake-captcha-token"
+}
+```
+
+Use `fake-captcha-token` only with `Captcha:Provider=Fake`. Turnstile requires a fresh widget
+token from the client. Expect `202` and a generic acknowledgement. This does not confirm
+account existence or delivery. Requesting a code does not sign you in.
+
+4. Read the code from the configured inbox. Call `POST /api/auth/otp/verify`:
+
+```json
+{
+  "email": "your-account@example.com",
+  "code": "012345"
+}
+```
+
+Replace the code with the received value. Keep it a string, including leading zeroes.
+Verification does not take a password, new password or CAPTCHA token. Expect `200`, public
+user JSON and two HttpOnly cookies. Raw tokens are never returned in JSON.
+
+5. Call `GET /api/auth/me`: expect `200` and the actual current credit balance. OTP login
+   neither creates an account nor grants credits. It records the successful login.
+6. Call `POST /api/auth/refresh` with `{}`: expect `200` and replacement cookies.
+7. Call `POST /api/auth/logout` with `{}`: expect `204`; `/me` then returns `401`.
+8. Reusing the consumed code returns `401 INVALID_OTP_LOGIN_CODE`. Unknown/inactive accounts,
+   wrong, expired and exhausted codes use that same rejection and preserve existing cookies.
+
+Development Swagger adds `X-Requested-With: bandup` to JSON mutations. Frontend clients must
+send that header and `credentials: include` whenever browser cookies accompany these calls.
+Do not run a refresh/retry loop for `INVALID_OTP_LOGIN_CODE`; display it on the login form.
+
+Codes expire in ten minutes and permit five incorrect guesses. Request another after the
+60-second cooldown; the replacement invalidates the previous login code. Limits are five
+requests/email/hour, twenty/IP/hour, twenty verifications/email/15 minutes and one hundred
+verifications/IP/15 minutes. Email suppression is generic; IP throttling returns `429
+OTP_LOGIN_RATE_LIMITED`. Password login and recovery have separate limits.
+
+Password reset invalidates pending login codes and revokes existing refresh sessions in the
+same transaction. It does not immediately invalidate access JWTs on other devices. Code
+emails are queued after commit and delivered best-effort with no automatic retries. On a
+missing email, check the existing Resend sender/recipient restrictions and delivery dashboard
+or Mailpit; after fixing the cause, request again after cooldown. An email provider outage
+does not make `202` a delivery guarantee. A quota/database outage fails closed without new
+session cookies.
+
+Production hosts also need `OtpLogin__CodeProtectionKey` and Redis configuration. The
+deployment owner must pass this setting into the API environment alongside the existing
+recovery and email settings. Deployment wiring is outside this backend feature; no production
+deployment or real-inbox acceptance is performed by the automated tests.

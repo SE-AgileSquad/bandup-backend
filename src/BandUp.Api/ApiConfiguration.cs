@@ -67,6 +67,7 @@ public static class ApiConfiguration
         // ITokenService, so it does not inherit the requirement for a key it would never use.
         services.AddOptions<AuthSettings>().ValidateOnStart();
         services.AddOptions<PasswordResetSettings>().ValidateOnStart();
+        services.AddOptions<OtpLoginSettings>().ValidateOnStart();
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
