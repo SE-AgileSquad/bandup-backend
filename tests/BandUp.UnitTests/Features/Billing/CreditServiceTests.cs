@@ -2,6 +2,7 @@ using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
 using BandUp.Application.Features.Billing;
 using BandUp.Domain.Billing;
+using BandUp.Application.Features.Billing.Admin;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
@@ -74,6 +75,8 @@ public sealed class CreditServiceTests
 
         public Task<CreditAccount?> FindByUserIdAsync(Guid userId, CancellationToken ct) =>
             Task.FromResult(Stored is { } account && account.UserId == userId ? account : null);
+
+        public Task<CreditAccount?> FindByUserIdForUpdateAsync(Guid userId, CancellationToken ct) => FindByUserIdAsync(userId, ct);
     }
 
     private sealed class TestLedgerRepository : ICreditLedgerRepository
@@ -84,5 +87,10 @@ public sealed class CreditServiceTests
             AddedEntry = entry;
             return Task.CompletedTask;
         }
+
+        public Task<CreditLedgerEntry?> FindAdminAdjustmentAsync(Guid requestId, CancellationToken ct) => Task.FromResult<CreditLedgerEntry?>(null);
+
+        public Task<PagedResult<CreditHistoryItem>> ListForUserAsync(Guid userId, PageRequest page, CancellationToken ct) =>
+            Task.FromResult(PagedResult<CreditHistoryItem>.Create([], page, 0));
     }
 }

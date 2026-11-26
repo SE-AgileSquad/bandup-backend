@@ -1,6 +1,7 @@
 using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
 using BandUp.Application.Features.Identity.Admin.ChangeUserRole;
+using BandUp.Application.Features.Billing.Admin;
 using BandUp.Application.Features.Identity.Admin.CreateAdminUser;
 using BandUp.Application.Features.Identity.Admin.DeactivateUser;
 using BandUp.Application.Features.Identity.Admin.ListAdminUsers;
@@ -17,6 +18,29 @@ public sealed class AdminUserEndpoints : IEndpointGroup
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         RouteGroupBuilder users = AdminContentHttp.RequireSuperAdmin(endpoints);
+
+        users.MapGet("/{userId:guid}/credits", (Guid userId, IDispatcher dispatcher, HttpContext http) =>
+                AdminContentHttp.ReadAsync<GetAdminUserCreditsQuery, AdminCreditBalance>(new(userId), dispatcher, http))
+            .WithName("Admin_GetUserCredits").Produces<AdminCreditBalance>()
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        users.MapGet("/{userId:guid}/credits/history", (Guid userId, int? page, int? pageSize,
+                IDispatcher dispatcher, HttpContext http) =>
+                AdminContentHttp.ReadAsync<ListAdminCreditHistoryQuery, PagedResult<CreditHistoryItem>>(
+                    new(userId, new PageRequest(page ?? 1, pageSize ?? PageRequest.DefaultPageSize)), dispatcher, http))
+            .WithName("Admin_ListUserCreditHistory").Produces<PagedResult<CreditHistoryItem>>()
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        users.MapPost("/{userId:guid}/credits/adjustments", async (Guid userId, AdjustUserCreditsInput input,
+                IDispatcher dispatcher, HttpContext http) =>
+            {
+                Result<CreditAdjustmentResult> result = await dispatcher.SendAsync<AdjustUserCreditsCommand, CreditAdjustmentResult>(
+                    new(userId, input), http.RequestAborted);
+                return result.IsSuccess ? TypedResults.Ok(result.Value) : result.ToProblem(http);
+            })
+            .WithName("Admin_AdjustUserCredits").Produces<CreditAdjustmentResult>()
+            .ProducesProblem(StatusCodes.Status400BadRequest).ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         users.MapGet("", (int? page, int? pageSize, Role? role, string? search, bool? isActive,
                 IDispatcher dispatcher, HttpContext http) =>

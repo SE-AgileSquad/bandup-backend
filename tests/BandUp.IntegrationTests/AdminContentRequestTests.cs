@@ -74,6 +74,9 @@ public sealed class AdminContentRequestTests
     [InlineData("POST", "/api/admin/users")]
     [InlineData("PATCH", "/api/admin/users/01998a61-7ca4-7c0b-8051-9ee86f71afab/role")]
     [InlineData("DELETE", "/api/admin/users/01998a61-7ca4-7c0b-8051-9ee86f71afab")]
+    [InlineData("GET", "/api/admin/users/01998a61-7ca4-7c0b-8051-9ee86f71afab/credits")]
+    [InlineData("GET", "/api/admin/users/01998a61-7ca4-7c0b-8051-9ee86f71afab/credits/history")]
+    [InlineData("POST", "/api/admin/users/01998a61-7ca4-7c0b-8051-9ee86f71afab/credits/adjustments")]
     public async Task An_Ordinary_Admin_Cannot_Use_Any_User_Management_Endpoint_Even_With_A_Super_Admin_Claim(
         string method, string path)
     {
