@@ -248,3 +248,7 @@ These recommendations are non-binding. Back off between status polls and allow o
 - [ ] Show waiting or evaluating for Queued and Processing. On Succeeded follow `resultUrl` and show the estimated feedback. On Failed show the failure and refund from `creditRefunded`.
 - [ ] Keep the essay visible on a 402. Show that a credit is required before another submission can be accepted.
 - [ ] Test owner-only reads, empty pages, reopening historical prompts, refresh and safe replay, each lifecycle state, and each distinct 409 code against mocks.
+
+## Card 2 input limits for runtime integration
+
+The approved POST limit is 64 KiB (65,536 bytes) for the entire JSON body, including JSON escapes. The future HTTP endpoint returns 413 for a larger body. The decoded essay may contain at most 8,000 Unicode scalar values and must contain 100–350 words inclusive. Invalid essay content, including malformed surrogate sequences and U+0000, returns 400. Count supplementary characters as one scalar. Preserve the original string when retrying. These limits are the Frontend handoff for runtime integration. Public submission stays disabled until the real evaluation consumer is ready.
