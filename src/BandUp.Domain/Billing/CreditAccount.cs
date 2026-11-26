@@ -55,8 +55,13 @@ public sealed class CreditAccount : Entity
             throw new DomainException("A credit transaction must carry a positive amount.");
         }
 
+        if (!Enum.IsDefined(deltaType))
+        {
+            throw new DomainException("The credit transaction direction is invalid.");
+        }
+
         int signedDelta = deltaType == CreditDelta.Grant ? amount : -amount;
-        int candidate = Balance + signedDelta;
+        long candidate = (long)Balance + signedDelta;
 
         if (candidate < 0)
         {
@@ -64,7 +69,12 @@ public sealed class CreditAccount : Entity
                 $"A {reason} of {signedDelta} would leave a negative balance.");
         }
 
-        Balance = candidate;
+        if (candidate > int.MaxValue)
+        {
+            throw new DomainException("The resulting credit balance exceeds the supported range.");
+        }
+
+        Balance = (int)candidate;
         UpdatedAt = now;
 
         return CreditLedgerEntry.Record(
