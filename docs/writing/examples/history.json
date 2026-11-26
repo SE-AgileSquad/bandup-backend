@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "submissionId": "018fa525-5529-7770-8df2-b455acbf0ce9",
+      "promptId": "018fa524-bc4b-7e8a-8ee0-5a719b49e6b1",
+      "title": "Public transport",
+      "status": "Succeeded",
+      "submittedAt": "2026-11-25T10:00:00+00:00",
+      "completedAt": "2026-11-25T10:00:00+00:00",
+      "estimatedOverallBand": 6.5,
+      "scoreLabel": "estimated"
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 1
+}

@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bandup:writing:model:1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "criteria"
+  ],
+  "properties": {
+    "summary": {
+      "$ref": "#/$defs/text"
+    },
+    "criteria": {
+      "$ref": "#/$defs/criteria"
+    }
+  },
+  "$defs": {
+    "score": {
+      "type": "number",
+      "enum": [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9]
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "pattern": "\\S"
+    },
+    "list": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/text"
+      }
+    },
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "score",
+        "explanation",
+        "strengths",
+        "areasForImprovement",
+        "recommendations"
+      ],
+      "properties": {
+        "score": {
+          "$ref": "#/$defs/score"
+        },
+        "explanation": {
+          "$ref": "#/$defs/text"
+        },
+        "strengths": {
+          "$ref": "#/$defs/list"
+        },
+        "areasForImprovement": {
+          "$ref": "#/$defs/list"
+        },
+        "recommendations": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "minItems": 1
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "excerpt",
+              "observation"
+            ],
+            "properties": {
+              "excerpt": {
+                "type": "string",
+                "maxLength": 240,
+                "pattern": "\\S"
+              },
+              "observation": {
+                "$ref": "#/$defs/text"
+              }
+            }
+          }
+        }
+      }
+    },
+    "criteria": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tr",
+        "cc",
+        "lr",
+        "gra"
+      ],
+      "properties": {
+        "tr": {
+          "$ref": "#/$defs/criterion"
+        },
+        "cc": {
+          "$ref": "#/$defs/criterion"
+        },
+        "lr": {
+          "$ref": "#/$defs/criterion"
+        },
+        "gra": {
+          "$ref": "#/$defs/criterion"
+        }
+      }
+    }
+  }
+}
