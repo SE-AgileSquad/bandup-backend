@@ -1,4 +1,5 @@
 using BandUp.Application.Common;
+using BandUp.Application.Features.Billing.Admin;
 
 namespace BandUp.Application.Abstractions;
 
@@ -17,4 +18,8 @@ public interface ICreditService
 
     /// <summary>The current balance, or null while no account exists yet.</summary>
     Task<int?> GetBalanceAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>Called within an admin command transaction, after the current super-admin role is checked under its lock.</summary>
+    Task<Result<CreditAdjustmentResult>> AdjustAsync(Guid userId, int delta, Guid actorId,
+        Guid requestId, string? note, CancellationToken cancellationToken);
 }
