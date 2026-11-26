@@ -10,6 +10,7 @@ public sealed class ResetPasswordHandler(
     IPasswordResetCodeProtector codes,
     IPasswordHasher passwordHasher,
     IRefreshTokenStore refreshTokens,
+    IOtpLoginChallengeStore otpLoginChallenges,
     IPostCommitEmailQueue emailQueue,
     TimeProvider timeProvider) : ICommandHandler<ResetPasswordCommand, ResetPasswordOutcome>
 {
@@ -60,6 +61,7 @@ public sealed class ResetPasswordHandler(
         challenge.Consume(now);
         await challenges.InvalidateOthersAsync(session.User.Id, challenge.Id, now, cancellationToken);
         await refreshTokens.RevokeAllForUserAsync(session.User.Id, now, cancellationToken);
+        await otpLoginChallenges.InvalidateAllForUserAsync(session.User.Id, now, cancellationToken);
         emailQueue.Enqueue(new EmailMessage(session.User.Email, "Your BandUp password has changed",
             "Your BandUp password has been changed.\n\nIf you did not make this change, contact support."));
         return Result<ResetPasswordOutcome>.Success(new ResetPasswordOutcome.Completed());
