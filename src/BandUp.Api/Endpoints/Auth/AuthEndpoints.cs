@@ -2,11 +2,13 @@ using BandUp.Api.Auth;
 using BandUp.Api.Errors;
 using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
+using BandUp.Application.Features.Identity.ForgotPassword;
 using BandUp.Application.Features.Identity.GetMe;
 using BandUp.Application.Features.Identity.Login;
 using BandUp.Application.Features.Identity.Logout;
 using BandUp.Application.Features.Identity.Refresh;
 using BandUp.Application.Features.Identity.Register;
+using BandUp.Application.Features.Identity.ResetPassword;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -63,6 +65,31 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        endpoints.MapPost("/forgot-password", ForgotPasswordAsync)
+            .WithName("Auth_ForgotPassword")
+            .AllowAnonymous()
+            .Accepts<ForgotPasswordRequest>("application/json")
+            .WithSummary("Request an email password-reset code.")
+            .WithDescription("Anonymous. Always returns the same acknowledgement for eligible, unknown or suppressed accounts. If session cookies are present, send X-Requested-With: bandup. Codes are delivered by email and never returned by this API.")
+            .Produces<ForgotPasswordOutcome>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        endpoints.MapPost("/reset-password", ResetPasswordAsync)
+            .WithName("Auth_ResetPassword")
+            .AllowAnonymous()
+            .Accepts<ResetPasswordRequest>("application/json")
+            .WithSummary("Reset a password using an email code.")
+            .WithDescription("Anonymous. Send email, a six-digit code as a string (preserve leading zeroes), and newPassword. If session cookies are present, send X-Requested-With: bandup. Success clears this browser's session cookies after commit; sign in normally afterward. Invalid, expired and exhausted codes share one 422 response. Existing access tokens on other devices keep their normal expiry.")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
     }
 
@@ -190,8 +217,49 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
             : result.ToProblem(httpContext);
     }
 
+    private static async Task<IResult> ForgotPasswordAsync(
+        ForgotPasswordRequest request,
+        IDispatcher dispatcher,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        ForgotPasswordCommand command = new(request.Email, httpContext.Connection.RemoteIpAddress?.ToString());
+        Result<ForgotPasswordOutcome> result = await dispatcher.SendAsync<ForgotPasswordCommand, ForgotPasswordOutcome>(command, cancellationToken);
+        return result.IsSuccess
+            ? TypedResults.Accepted((string?)null, result.Value)
+            : result.ToProblem(httpContext);
+    }
+
+    private async Task<IResult> ResetPasswordAsync(
+        ResetPasswordRequest request,
+        IDispatcher dispatcher,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        ResetPasswordCommand command = new(request.Email, request.Code, request.NewPassword,
+            httpContext.Connection.RemoteIpAddress?.ToString());
+        Result<ResetPasswordOutcome> result = await dispatcher.SendAsync<ResetPasswordCommand, ResetPasswordOutcome>(command, cancellationToken);
+        if (result.IsFailure)
+        {
+            return result.ToProblem(httpContext);
+        }
+
+        switch (result.Value)
+        {
+            case ResetPasswordOutcome.Completed:
+                cookieService.ClearSessionCookies(httpContext.Response.Cookies);
+                return TypedResults.NoContent();
+            case ResetPasswordOutcome.Rejected:
+                return Error.InvalidPasswordReset().ToProblem(httpContext);
+            default:
+                throw new InvalidOperationException("Unknown password-reset outcome.");
+        }
+    }
+
     public sealed record RegisterRequest(string Email, string Password, string DisplayName, string CaptchaToken);
     public sealed record LoginRequest(string Email, string Password, string CaptchaToken);
+    public sealed record ForgotPasswordRequest(string Email);
+    public sealed record ResetPasswordRequest(string Email, string Code, string NewPassword);
     public sealed record SessionRequest;
     public sealed record UserDto(Guid Id, string Email, string DisplayName, string Role, int CreditBalance);
 }

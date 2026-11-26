@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Http;
 namespace BandUp.Api.Auth;
 
 /// <summary>
-/// Owns cookie names, issuance and deletion for login, refresh and logout. Deletion uses the
+/// Owns cookie names, issuance and deletion for login, refresh, logout and password recovery. Deletion uses the
 /// same host/path scope and security policy as issuance.
 /// </summary>
 public sealed class AuthCookieService(IOptions<AuthSettings> options)

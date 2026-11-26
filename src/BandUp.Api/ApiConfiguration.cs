@@ -66,6 +66,7 @@ public static class ApiConfiguration
         // Infrastructure; this host opts into running them at startup. The Worker never resolves
         // ITokenService, so it does not inherit the requirement for a key it would never use.
         services.AddOptions<AuthSettings>().ValidateOnStart();
+        services.AddOptions<PasswordResetSettings>().ValidateOnStart();
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
