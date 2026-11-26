@@ -3,7 +3,7 @@
 The state of the foundation and implemented product slices, including verified behavior and
 known limits. The detailed auth contract is in [ADR 0016](adr/0016-refresh-logout-contracts-and-commit-outcomes.md).
 
-Last updated: 2026-11-22.
+Last updated: 2026-11-26.
 
 ## Checkpoints
 
@@ -91,6 +91,17 @@ authorization, real-inbox delivery and native-browser acceptance remain manual s
 No migration, SDK or new package was added. The complete setup is in the Resend section of
 [the local guide](auth-local-setup.md#7-use-resend-and-a-real-inbox-in-swagger).
 
+Email OTP login verification on 2026-11-26: `dotnet build -c Release --no-restore` completed
+with zero warnings/errors; `dotnet test -c Release --no-build` passed **828 tests**, with zero
+failures or skips. The full suite includes HTTP request/verify/profile/refresh/logout,
+generic responses, guess persistence, rollback, email and quota failures, concurrent
+verification, independent Redis quotas and password-reset invalidation/races. Docker Desktop
+28.3.2 supplied disposable dependencies. `dotnet ef migrations has-pending-model-changes`
+reported no model changes after the new migration. No new package was added. Tests ran
+outside the Windows sandbox for process/pipe access, without using real inbox credentials,
+changing developer user secrets or applying migrations to the developer database. Live
+Resend delivery, production deployment and native-browser acceptance remain manual checks.
+
 | Project | Covers |
 |---|---|
 | `BandUp.UnitTests` | Pipeline semantics, domain rules, handlers, token issuance/revocation, CAPTCHA adapters and logging |
@@ -99,11 +110,23 @@ No migration, SDK or new package was added. The complete setup is in the Resend 
 
 ## Product slices
 
+Email OTP login is implemented end to end for existing active accounts. Request and verify
+routes reuse the existing session cookies, refresh/logout and email adapters. Codes have
+independent protected storage and quotas; password reset atomically invalidates pending login
+codes. See [ADR 0018](adr/0018-email-otp-login-contracts-and-policy.md) and
+[the Swagger walkthrough](auth-local-setup.md#8-sign-in-with-an-email-otp).
+
+The API now requires an independent `OtpLogin:CodeProtectionKey` at startup and a new
+`AddOtpLoginChallenges` migration. Existing JWT/recovery keys and Resend settings are preserved.
+The Worker requires neither code-protection key. Real email credentials and the developer's
+database are not changed by the implementation or automated tests.
+
 | Slice | Implemented behavior |
 |---|---|
-| Identity | Registration, password login, profile, rotating refresh, reuse detection and logout |
+| Identity | Registration, password or email OTP login, profile, rotating refresh, reuse detection and logout |
 | Session transport | HttpOnly cookies with configured expiry/security, CSRF guard and common ProblemDetails |
 | Access revocation | Validated JWT metadata and Redis blacklist enforcement through expiry plus clock skew |
+| Email OTP login | Request/verify endpoints, CAPTCHA on request, separate HMAC-protected one-use codes, atomic Redis quotas, committed guess counters, post-commit delivery, concurrent verification protection and password-reset invalidation |
 | Billing signup | Credit account and ledger with the signup grant; `/me` reads the current balance |
 | Auth developer flow | Fake CAPTCHA and Development Swagger header support; [setup guide](auth-local-setup.md) |
 | Password recovery | Request/reset HTTP endpoints, protected one-use codes, quotas, timing, atomic password reset/refresh revocation/cookie clearing, and local or Resend email delivery; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Phases 1–6 implementation and offline checks are in place; live Resend/real-inbox acceptance awaits developer configuration. |
@@ -129,6 +152,7 @@ No migration, SDK or new package was added. The complete setup is in the Resend 
 | AUTH-09 | Rotation, expired/inactive rejection, committed reuse revocation and concurrent refresh | Unit + Integration |
 | AUTH-10 | Owner-scoped logout, JWT blacklist, expiry/skew, Redis failures and refresh/logout races | Unit + Integration |
 | AUTH-15 | Email password recovery, one-use codes, quotas, atomic reset/refresh revocation, cookie clearing and local Mailpit/Swagger acceptance | Unit + Integration |
+| AUTH-16 | Email OTP login request/verify, protected one-use codes, quotas, delivery, normal session cookies, committed guesses, concurrent verification and reset invalidation | Unit + Integration |
 
 ## Approved adjustments
 
