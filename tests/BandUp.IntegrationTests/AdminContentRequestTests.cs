@@ -195,6 +195,8 @@ public sealed class AdminContentRequestTests
                     ["Cache:Provider"] = "InMemory",
                     ["MessagePublisher:Provider"] = "InMemory",
                     ["Sentry:Dsn"] = string.Empty,
+                    ["OtpLogin:CodeProtectionKey"] = Convert.ToBase64String(Enumerable.Repeat((byte)43, 32).ToArray()),
+                    ["OtpLogin:RateLimitProvider"] = "InMemory",
                     ["PasswordReset:CodeProtectionKey"] =
                         Convert.ToBase64String(Enumerable.Repeat((byte)42, 32).ToArray()),
                     ["PasswordReset:RateLimitProvider"] = "InMemory",

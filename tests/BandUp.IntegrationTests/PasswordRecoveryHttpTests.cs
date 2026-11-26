@@ -360,6 +360,7 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
     {
         Dictionary<string, string?> settings = environment.SettingsFor(environment.MigratedConnectionString);
         settings["PasswordReset:CodeProtectionKey"] = string.Empty;
+        settings["OtpLogin:CodeProtectionKey"] = string.Empty;
         using IHost host = WorkerHost.Build([], configure: builder => builder.Configuration.AddInMemoryCollection(settings));
         await host.StartAsync();
         await host.StopAsync();
