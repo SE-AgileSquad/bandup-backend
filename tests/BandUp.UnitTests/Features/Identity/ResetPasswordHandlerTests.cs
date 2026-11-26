@@ -20,6 +20,7 @@ public sealed class ResetPasswordHandlerTests
     private readonly IPasswordResetCodeProtector _codes = Substitute.For<IPasswordResetCodeProtector>();
     private readonly IPasswordHasher _hasher = Substitute.For<IPasswordHasher>();
     private readonly IRefreshTokenStore _refresh = Substitute.For<IRefreshTokenStore>();
+    private readonly IOtpLoginChallengeStore _otpLogin = Substitute.For<IOtpLoginChallengeStore>();
     private readonly IPostCommitEmailQueue _emails = Substitute.For<IPostCommitEmailQueue>();
     private readonly FakeTimeProvider _time = new(Now);
 
@@ -132,6 +133,7 @@ public sealed class ResetPasswordHandlerTests
             _hasher.Hash(Password);
             _store.InvalidateOthersAsync(session.User.Id, session.Challenge.Id, Now, CancellationToken.None);
             _refresh.RevokeAllForUserAsync(session.User.Id, Now, CancellationToken.None);
+            _otpLogin.InvalidateAllForUserAsync(session.User.Id, Now, CancellationToken.None);
             _emails.Enqueue(Arg.Is<EmailMessage>(message => message.To == Email &&
                 !message.TextBody.Contains(Password) && !message.TextBody.Contains("012345")), null);
         });
@@ -210,7 +212,7 @@ public sealed class ResetPasswordHandlerTests
     }
 
     private Task<Result<ResetPasswordOutcome>> HandleAsync() =>
-        new ResetPasswordHandler(_limits, _store, _codes, _hasher, _refresh, _emails, _time)
+        new ResetPasswordHandler(_limits, _store, _codes, _hasher, _refresh, _otpLogin, _emails, _time)
             .HandleAsync(new ResetPasswordCommand(Email, "012345", Password, Ip), CancellationToken.None);
 
     private void AssertNoPasswordOrSessionEffects()
@@ -218,6 +220,7 @@ public sealed class ResetPasswordHandlerTests
         _hasher.ReceivedCalls().ShouldBeEmpty();
         _refresh.ReceivedCalls().ShouldBeEmpty();
         _emails.ReceivedCalls().ShouldBeEmpty();
+        _otpLogin.ReceivedCalls().ShouldBeEmpty();
     }
 
     private static User NewUser() => User.Create(Email, "Reset", "old-password-hash", Now.AddDays(-1));
