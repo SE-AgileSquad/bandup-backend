@@ -2,7 +2,8 @@
 
 The API owns `bu_at` and `bu_rt` as host-only `HttpOnly` cookies with `Path=/` and
 `SameSite=Strict`. `Auth:RequireSecureCookies` controls `Secure`. Login and refresh set cookie
-expiry to the issued token expiry; successful logout and rejected refresh delete both cookies.
+expiry to the issued token expiry; successful logout, successful password reset and rejected
+refresh delete both cookies.
 Names can be configured, so clients should treat the cookies as browser-managed credentials.
 
 ## Requests and responses
@@ -14,6 +15,8 @@ Names can be configured, so clients should treat the cookies as browser-managed 
 | `GET /api/auth/me` | Valid access cookie | `200`, current profile | `401 UNAUTHORIZED` |
 | `POST /api/auth/refresh` | Refresh cookie; access cookie may be missing, expired or blacklisted | Empty `200`, replacement cookies | `401 INVALID_REFRESH_TOKEN`, both cookies deleted |
 | `POST /api/auth/logout` | Valid access cookie; optional presented refresh cookie | Empty `204`, both cookies deleted | `401 UNAUTHORIZED`, no cookie deletion |
+| `POST /api/auth/forgot-password` | Email JSON; anonymous, no CAPTCHA required | `202`, generic acknowledgement; no cookie changes | `400` validation; client-IP-wide `429` |
+| `POST /api/auth/reset-password` | Email, six-digit code string and new password JSON; anonymous | Empty `204`, both cookies deleted; no automatic login | Generic `422 INVALID_PASSWORD_RESET_CODE`; `400` validation; client-IP-wide `429`; cookies preserved |
 
 Refresh and logout accept an empty JSON object. Credentials supplied in JSON or the query
 string are not used. The API does not accept bearer headers as a replacement for the access
@@ -21,7 +24,8 @@ cookie. Authentication failures and expected handler errors use ProblemDetails w
 and `traceId`; `traceId` matches `X-Request-Id`.
 
 Whenever either session cookie accompanies an unsafe request, send JSON and
-`X-Requested-With: bandup`. This also applies to login/register when old cookies are present.
+`X-Requested-With: bandup`. This also applies to login/register and password recovery when old
+cookies are present.
 A failed CSRF guard returns `400 VALIDATION_ERROR` before the handler and leaves cookies and
 sessions unchanged. Malformed/missing JSON is a request error, not a refresh attempt.
 
@@ -75,6 +79,24 @@ browser cookie updates. Waiting for renewal before sending logout avoids the fin
 stale-cookie race. Logout normally revokes one presented refresh token; reuse detection
 revokes all of the user's unrevoked refresh tokens, including other devices. Reuse does not
 blacklist every access JWT already issued to those devices.
+
+## Password recovery
+
+Request the code and submit it as a string with the account email and new password. Show the
+same acknowledgement for every `202`; do not infer account existence or delivery success.
+Map `422 INVALID_PASSWORD_RESET_CODE` to the recovery form without triggering session refresh.
+Malformed input uses `400`, and client-IP throttling uses `429`.
+
+After a successful reset, clear client-side user/profile state and require normal login.
+Coordinate reset with in-flight refresh calls across tabs so a late response cannot restore
+cookies after the reset response. All refresh tokens stored before the reset are revoked;
+already-issued access JWTs retain their normal expiry. This browser's two cookies are deleted
+only on successful commit. Rejected reset requests and infrastructure errors preserve cookies.
+
+Recovery does not require CAPTCHA or an authenticated session. The existing CSRF guard still
+applies whenever either session cookie is sent. See [local setup](auth-local-setup.md#6-test-forgotten-password-recovery-with-a-local-inbox)
+for the Swagger/Mailpit walkthrough and [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md)
+for code lifetime, attempt/resend limits, delivery guarantees and access-token policy.
 
 ## Failure behavior
 

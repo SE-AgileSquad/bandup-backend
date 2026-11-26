@@ -12,6 +12,8 @@ public sealed record Error(string Code, string Message, ErrorType Type)
     public const string EmailTakenCode = "EMAIL_TAKEN";
     public const string InvalidCredentialsCode = "INVALID_CREDENTIALS";
     public const string InvalidRefreshTokenCode = "INVALID_REFRESH_TOKEN";
+    public const string InvalidPasswordResetCode = "INVALID_PASSWORD_RESET_CODE";
+    public const string PasswordResetRateLimitedCode = "PASSWORD_RESET_RATE_LIMITED";
     public const string CaptchaFailedCode = "CAPTCHA_FAILED";
     public const string CaptchaUnavailableCode = "CAPTCHA_UNAVAILABLE";
 
@@ -44,6 +46,12 @@ public sealed record Error(string Code, string Message, ErrorType Type)
 
     public static Error InvalidRefreshToken() =>
         new(InvalidRefreshTokenCode, "The session has expired. Sign in again.", ErrorType.Unauthorized);
+
+    public static Error InvalidPasswordReset() =>
+        new(InvalidPasswordResetCode, "The password-reset code is invalid or has expired.", ErrorType.Unprocessable);
+
+    public static Error PasswordResetRateLimited() =>
+        new(PasswordResetRateLimitedCode, "Too many password-reset requests. Try again later.", ErrorType.TooManyRequests);
 
     public static Error CaptchaFailed() =>
         new(CaptchaFailedCode, "The CAPTCHA check failed. Try again.", ErrorType.Unprocessable);
