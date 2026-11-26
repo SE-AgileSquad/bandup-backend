@@ -240,6 +240,39 @@ public sealed class PipelineTests
         result.Value.ShouldBe("ok");
     }
 
+    [Fact]
+    public async Task CancellationPreservesOriginalExceptionWhenRollbackFails()
+    {
+        var work = Substitute.For<IUnitOfWork>();
+        work.RollbackTransactionAsync(CancellationToken.None).Returns(Task.FromException(new IOException("rollback")));
+        MessageBuffer buffer = new();
+        TransactionBehavior<TestCommand, string> behavior = new(work, buffer);
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        var original = new OperationCanceledException(cancelled.Token);
+        var error = await Record.ExceptionAsync(() =>
+            behavior.HandleAsync(new TestCommand("cancel"), cancelled.Token, () => throw original));
+        error.ShouldBeSameAs(original);
+        original.Data["TransactionCleanup"].ShouldBeOfType<IOException>();
+        buffer.IsOpen.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task PublicationFailureAfterCommitDoesNotRollBack()
+    {
+        var work = Substitute.For<IUnitOfWork>();
+        MessageBuffer buffer = new();
+        TransactionBehavior<TestCommand, string> behavior = new(work, buffer);
+        await Should.ThrowAsync<IOException>(() => behavior.HandleAsync(new TestCommand("publish"), CancellationToken.None, () =>
+        {
+            buffer.Enqueue(_ => throw new IOException("publish"));
+            return Task.FromResult(Result<string>.Success("ok"));
+        }));
+        await work.Received(1).CommitTransactionAsync(Arg.Any<CancellationToken>());
+        await work.DidNotReceive().RollbackTransactionAsync(Arg.Any<CancellationToken>());
+        buffer.IsOpen.ShouldBeFalse();
+    }
+
     private sealed record TestCommand(string Value) : ICommand<string>;
 
     private sealed record TestQuery(string Value) : IQuery<string>;

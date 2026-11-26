@@ -35,6 +35,60 @@ public sealed class CreditService(
         return Task.FromResult(Result.Success());
     }
 
+    private async Task<CreditAccount> RequireAccountAsync(Guid userId, CancellationToken cancellationToken) =>
+        await accountRepository.LockAsync(userId, cancellationToken)
+        ?? throw new InvalidOperationException("The expected credit account is missing.");
+
+    public async Task LockAccountAsync(Guid userId, CancellationToken cancellationToken) =>
+        await RequireAccountAsync(userId, cancellationToken);
+
+    public Task<Result> ChargeWritingAsync(Guid userId, Guid submissionId, CancellationToken cancellationToken) =>
+        ApplyWritingAsync(userId, submissionId, CreditDelta.Charge, cancellationToken);
+
+    public Task<Result> RefundWritingAsync(Guid userId, Guid submissionId, CancellationToken cancellationToken) =>
+        ApplyWritingAsync(userId, submissionId, CreditDelta.Grant, cancellationToken);
+
+    private async Task<Result> ApplyWritingAsync(Guid userId, Guid submissionId, CreditDelta direction,
+        CancellationToken cancellationToken)
+    {
+        if (submissionId == Guid.Empty)
+        {
+            throw new ArgumentException("A submission reference is required.", nameof(submissionId));
+        }
+
+        CreditAccount account = await RequireAccountAsync(userId, cancellationToken);
+        bool refund = direction == CreditDelta.Grant;
+        var charge = await ledgerRepository.FindAsync(CreditLedgerEntry.WritingChargeReason, submissionId, cancellationToken);
+        if (charge is not null && (charge.UserId != userId || charge.Delta != -1))
+        {
+            return Result.Failure(Error.Conflict("The original charge does not match this operation."));
+        }
+
+        if (refund && charge is null)
+        {
+            return Result.Failure(Error.Conflict("A writing refund requires a matching charge."));
+        }
+
+        string reason = refund ? CreditLedgerEntry.WritingRefundReason : CreditLedgerEntry.WritingChargeReason;
+        var existing = refund ? await ledgerRepository.FindAsync(reason, submissionId, cancellationToken) : charge;
+        if (existing is not null)
+        {
+            return existing.UserId == userId && existing.Delta == (refund ? 1 : -1)
+                ? Result.Success()
+                : Result.Failure(Error.Conflict("The ledger reference belongs to another operation."));
+        }
+
+        if (!refund && account.Balance < 1)
+        {
+            return Result.Failure(new Error(Writing.WritingErrorCodes.InsufficientCredit,
+                "One credit is required for this evaluation.", ErrorType.PaymentRequired));
+        }
+
+        var entry = account.RecordTransaction(1, direction, reason, timeProvider.GetUtcNow(), submissionId);
+        await ledgerRepository.AddAsync(entry, cancellationToken);
+        return Result.Success();
+    }
+
     public async Task<int?> GetBalanceAsync(Guid userId, CancellationToken cancellationToken)
     {
         CreditAccount? account = await accountRepository.FindByUserIdAsync(userId, cancellationToken);

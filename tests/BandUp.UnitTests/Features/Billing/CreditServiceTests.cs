@@ -61,6 +61,28 @@ public sealed class CreditServiceTests
         balance.ShouldBe(7);
     }
 
+    [Fact]
+    public async Task WritingOperationsRequireAnAccountAndMatchingCharge()
+    {
+        CreditService service = new(_accounts, _ledger, _time);
+        Guid owner = Guid.NewGuid();
+        Guid reference = Guid.NewGuid();
+        var ct = CancellationToken.None;
+        await Should.ThrowAsync<InvalidOperationException>(() => service.ChargeWritingAsync(owner, reference, ct));
+        _accounts.Stored = CreditAccount.Open(owner, 1, Now);
+        (await service.RefundWritingAsync(owner, reference, ct)).IsFailure.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, reference, ct)).IsSuccess.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, reference, ct)).IsSuccess.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, Guid.NewGuid(), ct)).Error!.Type.ShouldBe(ErrorType.PaymentRequired);
+        _accounts.Stored.Balance.ShouldBe(0);
+        (await service.RefundWritingAsync(owner, reference, ct)).IsSuccess.ShouldBeTrue();
+        (await service.RefundWritingAsync(owner, reference, ct)).IsSuccess.ShouldBeTrue();
+        _accounts.Stored.Balance.ShouldBe(1);
+        _accounts.Stored = CreditAccount.Open(Guid.NewGuid(), 0, Now);
+        (await service.RefundWritingAsync(_accounts.Stored.UserId, reference, ct)).IsFailure.ShouldBeTrue();
+        _accounts.Stored.Balance.ShouldBe(0);
+    }
+
     private sealed class TestCreditAccountRepository : ICreditAccountRepository
     {
         public CreditAccount? AddedAccount { get; private set; }
@@ -72,15 +94,22 @@ public sealed class CreditServiceTests
             return Task.CompletedTask;
         }
 
+        public Task<CreditAccount?> LockAsync(Guid userId, CancellationToken ct) => FindByUserIdAsync(userId, ct);
+
         public Task<CreditAccount?> FindByUserIdAsync(Guid userId, CancellationToken ct) =>
             Task.FromResult(Stored is { } account && account.UserId == userId ? account : null);
     }
 
     private sealed class TestLedgerRepository : ICreditLedgerRepository
     {
+        private readonly List<CreditLedgerEntry> _entries = [];
+        public Task<CreditLedgerEntry?> FindAsync(string reason, Guid referenceId, CancellationToken ct) =>
+            Task.FromResult(_entries.SingleOrDefault(entry => entry.Reason == reason && entry.ReferenceId == referenceId));
+
         public CreditLedgerEntry? AddedEntry { get; private set; }
         public Task AddAsync(CreditLedgerEntry entry, CancellationToken ct)
         {
+            _entries.Add(entry);
             AddedEntry = entry;
             return Task.CompletedTask;
         }
