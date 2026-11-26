@@ -119,7 +119,8 @@ dotnet user-secrets set "Redis:ConnectionString" "localhost:REDIS_PORT" --projec
 dotnet user-secrets set "RabbitMq:Port" "RABBITMQ_PORT" --project src/BandUp.Worker
 ```
 
-The API requires `Auth:SigningKey` and an independent `PasswordReset:CodeProtectionKey`.
+The API requires three independent keys: `Auth:SigningKey`, `PasswordReset:CodeProtectionKey`
+and `OtpLogin:CodeProtectionKey`.
 Generate them once for your local environment; do not
 copy a shared example key. This PowerShell snippet generates 32 random bytes:
 
@@ -131,6 +132,8 @@ try {
     dotnet user-secrets set 'Auth:SigningKey' ([Convert]::ToBase64String($bandupKeyBytes)) --project src/BandUp.Api
     $bandupRng.GetBytes($bandupKeyBytes)
     dotnet user-secrets set 'PasswordReset:CodeProtectionKey' ([Convert]::ToBase64String($bandupKeyBytes)) --project src/BandUp.Api
+    $bandupRng.GetBytes($bandupKeyBytes)
+    dotnet user-secrets set 'OtpLogin:CodeProtectionKey' ([Convert]::ToBase64String($bandupKeyBytes)) --project src/BandUp.Api
 }
 finally {
     $bandupRng.Dispose()
@@ -144,8 +147,12 @@ contains the exact commands and walkthrough. No external email account is needed
 For real email delivery, select `Email:Provider=Resend`, configure the API key and sender in
 API user secrets, and follow [the complete Resend/Swagger walkthrough](docs/auth-local-setup.md#7-use-resend-and-a-real-inbox-in-swagger).
 
-The fake provider accepts `fake-captcha-token` on register/login. The Worker needs neither
-the signing key nor the recovery key. In Development, `Auth:RequireSecureCookies=false`
+For an existing setup, preserve existing keys and generate only missing ones. Email OTP login
+uses `POST /api/auth/otp/request` followed by `POST /api/auth/otp/verify`; see
+[the OTP Swagger walkthrough](docs/auth-local-setup.md#8-sign-in-with-an-email-otp).
+
+The fake provider accepts `fake-captcha-token` on register/login/OTP request. The Worker needs
+none of the three keys. In Development, `Auth:RequireSecureCookies=false`
 permits local HTTP.
 
 ## Ports that cannot be bound
