@@ -4,6 +4,9 @@ namespace BandUp.Domain.Writing;
 
 public sealed class WritingPrompt : Entity
 {
+    public const int WritingMinWords = 100;
+    public const int WritingMaxWords = 350;
+
     private WritingPrompt() { }
 
     public string Title { get; private set; } = null!;
@@ -67,16 +70,22 @@ public sealed class WritingPrompt : Entity
 
     public void Publish(DateTimeOffset now)
     {
+        if (Status != WritingPromptStatus.Draft && Status != WritingPromptStatus.Published)
+        {
+            throw new DomainException("Only a draft writing prompt can be published.");
+        }
+
+        if (MinWords != WritingMinWords || MaxWords != WritingMaxWords)
+        {
+            throw new DomainException("Publishing a writing prompt requires minWords = 100 and maxWords = 350.");
+        }
+
         if (Status == WritingPromptStatus.Published)
         {
             return;
         }
 
-        if (Status != WritingPromptStatus.Draft)
-        {
-            throw new DomainException("Only a draft writing prompt can be published.");
-        }
-
+        // Publishing is the admin's content approval and makes the prompt eligible for learner use.
         Status = WritingPromptStatus.Published;
         PublishedAt = now;
         UpdatedAt = now;

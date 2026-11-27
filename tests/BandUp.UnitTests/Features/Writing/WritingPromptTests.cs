@@ -54,4 +54,28 @@ public sealed class WritingPromptTests
 
     private static WritingPrompt Create() =>
         WritingPrompt.CreateDraft("Remote work", "Discuss remote work.", "Opinion essay", 100, 350, Actor, Now);
+
+    [Theory]
+    [InlineData(99, 350)]
+    [InlineData(101, 350)]
+    [InlineData(100, 349)]
+    [InlineData(100, 351)]
+    [InlineData(150, 400)]
+    public void Custom_Word_Ranges_Are_Allowed_In_Drafts_But_Block_Publication(int min, int max)
+    {
+        WritingPrompt prompt = Create();
+        prompt.EditDraft(prompt.Title, prompt.TaskText, prompt.EssayType, min, max, Now.AddMinutes(1));
+        DateTimeOffset savedAt = prompt.UpdatedAt;
+        Should.Throw<DomainException>(() => prompt.Publish(Now.AddMinutes(2)));
+        prompt.Status.ShouldBe(WritingPromptStatus.Draft);
+        prompt.PublishedAt.ShouldBeNull();
+        prompt.UpdatedAt.ShouldBe(savedAt);
+        prompt.MinWords.ShouldBe(min);
+        prompt.MaxWords.ShouldBe(max);
+
+        prompt.EditDraft(prompt.Title, prompt.TaskText, prompt.EssayType, 100, 350, Now.AddMinutes(3));
+        prompt.Publish(Now.AddMinutes(4));
+        prompt.Status.ShouldBe(WritingPromptStatus.Published);
+        prompt.PublishedAt.ShouldBe(Now.AddMinutes(4));
+    }
 }

@@ -9,6 +9,8 @@ using BandUp.Application.Features.Identity.Logout;
 using BandUp.Application.Features.Identity.Refresh;
 using BandUp.Application.Features.Identity.Register;
 using BandUp.Application.Features.Identity.ResetPassword;
+using BandUp.Application.Features.Identity.RequestOtpLogin;
+using BandUp.Application.Features.Identity.VerifyOtpLogin;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -36,6 +38,32 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
             .Produces<UserDto>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        endpoints.MapPost("/otp/request", RequestOtpLoginAsync)
+            .WithName("Auth_RequestOtpLogin")
+            .AllowAnonymous()
+            .Accepts<RequestOtpLoginRequest>("application/json")
+            .WithSummary("Request an email sign-in code for an existing account.")
+            .WithDescription("Send email and captchaToken. Unknown, inactive and suppressed accounts receive the same acknowledgement. Codes are delivered only by email. If session cookies are present, send X-Requested-With: bandup.")
+            .Produces<RequestOtpLoginOutcome>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        endpoints.MapPost("/otp/verify", VerifyOtpLoginAsync)
+            .WithName("Auth_VerifyOtpLogin")
+            .AllowAnonymous()
+            .Accepts<VerifyOtpLoginRequest>("application/json")
+            .WithSummary("Sign in using an email and a six-digit code.")
+            .WithDescription("Send email and code as a string, preserving leading zeroes. Success sets access and refresh cookies after commit; tokens are never returned in JSON. Invalid, expired and exhausted codes share INVALID_OTP_LOGIN_CODE (401). Do not refresh/retry that error. If session cookies are present, send X-Requested-With: bandup.")
+            .Produces<UserDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         endpoints.MapGet("/me", GetMeAsync)
             .WithName("Auth_GetMe")
@@ -153,6 +181,43 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
         return TypedResults.Ok(dto);
     }
 
+    private static async Task<IResult> RequestOtpLoginAsync(
+        RequestOtpLoginRequest request,
+        IDispatcher dispatcher,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        RequestOtpLoginCommand command = new(request.Email, request.CaptchaToken, httpContext.Connection.RemoteIpAddress?.ToString());
+        Result<RequestOtpLoginOutcome> result = await dispatcher.SendAsync<RequestOtpLoginCommand, RequestOtpLoginOutcome>(command, cancellationToken);
+        return result.IsSuccess ? TypedResults.Accepted((string?)null, result.Value) : result.ToProblem(httpContext);
+    }
+
+    private async Task<IResult> VerifyOtpLoginAsync(
+        VerifyOtpLoginRequest request,
+        IDispatcher dispatcher,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        VerifyOtpLoginCommand command = new(request.Email, request.Code, httpContext.Connection.RemoteIpAddress?.ToString(),
+            httpContext.Request.Headers.UserAgent.ToString());
+        Result<VerifyOtpLoginOutcome> result = await dispatcher.SendAsync<VerifyOtpLoginCommand, VerifyOtpLoginOutcome>(command, cancellationToken);
+        if (result.IsFailure)
+        {
+            return result.ToProblem(httpContext);
+        }
+        switch (result.Value)
+        {
+            case VerifyOtpLoginOutcome.Completed completed:
+                LoginResult login = completed.Login;
+                cookieService.SetSessionCookies(httpContext.Response.Cookies, login.AccessToken, login.RefreshToken, login.RefreshTokenExpiresAt);
+                return TypedResults.Ok(new UserDto(login.UserId, login.Email, login.DisplayName, login.Role, 0));
+            case VerifyOtpLoginOutcome.Rejected:
+                return Error.InvalidOtpLogin().ToProblem(httpContext);
+            default:
+                throw new InvalidOperationException("Unknown OTP sign-in outcome.");
+        }
+    }
+
     private async Task<IResult> RefreshAsync(
         SessionRequest _,
         IDispatcher dispatcher,
@@ -258,6 +323,8 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
 
     public sealed record RegisterRequest(string Email, string Password, string DisplayName, string CaptchaToken);
     public sealed record LoginRequest(string Email, string Password, string CaptchaToken);
+    public sealed record RequestOtpLoginRequest(string Email, string? CaptchaToken);
+    public sealed record VerifyOtpLoginRequest(string Email, string Code);
     public sealed record ForgotPasswordRequest(string Email);
     public sealed record ResetPasswordRequest(string Email, string Code, string NewPassword);
     public sealed record SessionRequest;

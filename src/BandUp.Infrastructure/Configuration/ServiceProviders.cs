@@ -18,4 +18,5 @@ public static class ServiceProviders
     public static readonly string[] Captcha = [Turnstile, Fake];
     public static readonly string[] Email = [InMemory, Mailpit, Resend];
     public static readonly string[] PasswordResetRateLimit = [Redis, InMemory];
+    public static readonly string[] OtpLoginRateLimit = [Redis, InMemory];
 }

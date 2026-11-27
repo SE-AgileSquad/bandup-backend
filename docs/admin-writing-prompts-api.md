@@ -54,8 +54,9 @@ Title and taskText are required and nonblank. Title allows up to 320 characters.
 is a nonblank display label up to 100 characters; it is not a closed enumeration of essay
 types. If omitted it defaults to Opinion essay. minWords/maxWords default to 100/350 as in
 the supplied design. minWords must be positive, maxWords must be at least minWords. These
-are configurable prompt metadata; this change does not implement Essay submission or enforce
-a learner word-count rule. PUT replaces all editable fields, including defaults for omitted
+fields remain configurable on Draft create/edit for future use; publication currently requires
+exactly minWords = 100 and maxWords = 350. This admin feature does not implement
+Essay submission or its word-count validation. PUT replaces all editable fields, including defaults for omitted
 optional fields. Text values are trimmed; saving identical normalized values preserves updatedAt.
 
 The server supplies Draft status, creator and timestamps. taskNumber is fixed to 2 and is
@@ -64,11 +65,19 @@ Three prompts is the FS content-delivery target, not a database or API limit; no
 are automatically inserted into the development database.
 
 Details additionally include taskText, createdBy, createdAt, publishedAt and isReadOnly.
-GET details also supplies the admin preview. Only Draft is editable. Publishing requires the
-valid content already enforced at save time; no human-verification flag or AI-generated
-answer is required. Publication and every mutation acquire the prompt's row lock and commit
-through the existing transaction pipeline. Repeated publish/archive operations do not change
-timestamps. Archived prompts cannot be republished or edited.
+GET details also supplies the admin preview. Only Draft is editable. Published means the admin
+has approved the question content and permitted its use by learners. Calling Publish is that
+approval action; no additional approval flag or AI-generated answer is required. Draft and
+Archived prompts are not eligible for new learner use. Consuming learner features should
+select only Published prompts; this change adds no learner endpoints.
+
+Publish validates the saved prompt under its row lock and requires exactly minWords = 100
+and maxWords = 350. A mismatch returns 409 CONFLICT with an explanatory message; status,
+publishedAt, updatedAt and the configured word limits stay unchanged. Correct the Draft via
+PUT, then publish again. The same limits are checked on repeat Publish requests, including
+legacy Published records; existing data is not automatically rewritten. Valid repeated
+publish/archive operations do not change timestamps. All mutations commit through the existing
+transaction pipeline. Archived prompts cannot be republished or edited.
 
 For editing published content, duplicate it, then edit/publish the copy. Duplication works
 from any status, retains the editable fields, assigns a new ID and creator/current timestamps,

@@ -40,6 +40,15 @@ public sealed class AdminWritingPromptTests(BandUpTestEnvironment environment)
         edited.MinWords.ShouldBe(150);
         await ChangeAsync(client, HttpMethod.Put, path, input);
         (await DetailsAsync(client, path)).UpdatedAt.ShouldBe(edited.UpdatedAt);
+        await ChangeAsync(client, HttpMethod.Post, $"{path}/publish", new { }, HttpStatusCode.Conflict);
+        WritingPromptDetails blocked = await DetailsAsync(client, path);
+        blocked.Status.ShouldBe(WritingPromptStatus.Draft);
+        blocked.PublishedAt.ShouldBeNull();
+        blocked.UpdatedAt.ShouldBe(edited.UpdatedAt);
+        await ChangeAsync(client, HttpMethod.Put, path, new
+        {
+            title = edited.Title, taskText = edited.TaskText, essayType = edited.EssayType, minWords = 100, maxWords = 350,
+        });
         await ChangeAsync(client, HttpMethod.Post, $"{path}/publish", new { });
         WritingPromptDetails published = await DetailsAsync(client, path);
         published.IsReadOnly.ShouldBeTrue();
@@ -119,6 +128,29 @@ public sealed class AdminWritingPromptTests(BandUpTestEnvironment environment)
 
     private static async Task<PagedResult<WritingPromptSummary>> PageAsync(HttpClient client, string path) =>
         (await client.GetFromJsonAsync<PagedResult<WritingPromptSummary>>(path, JsonSerialization.Options))!;
+
+    [Theory]
+    [InlineData(99, 350)]
+    [InlineData(101, 350)]
+    [InlineData(100, 349)]
+    [InlineData(100, 351)]
+    public async Task Publish_Requires_Exactly_The_Word_Limits_Without_Changing_The_Draft(int min, int max)
+    {
+        await using BandUpApiFactory factory = new(environment);
+        using HttpClient client = await ClientAsync(factory, Role.Admin);
+        string path = await CreateAsync(client, new
+        {
+            title = "Custom draft limits", taskText = "Discuss the topic.", minWords = min, maxWords = max,
+        });
+        WritingPromptDetails before = await DetailsAsync(client, path);
+        await ChangeAsync(client, HttpMethod.Post, $"{path}/publish", new { }, HttpStatusCode.Conflict);
+        WritingPromptDetails after = await DetailsAsync(client, path);
+        after.Status.ShouldBe(WritingPromptStatus.Draft);
+        after.MinWords.ShouldBe(min);
+        after.MaxWords.ShouldBe(max);
+        after.UpdatedAt.ShouldBe(before.UpdatedAt);
+        after.PublishedAt.ShouldBeNull();
+    }
 
     private static async Task<WritingPromptDetails> DetailsAsync(HttpClient client, string path) =>
         (await client.GetFromJsonAsync<WritingPromptDetails>(path, JsonSerialization.Options))!;
