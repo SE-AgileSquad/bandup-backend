@@ -39,6 +39,7 @@ public static class BandUpLoggerConfiguration
             .MinimumLevel.Is(ParseLevel(configuration["Serilog:MinimumLevel"]))
             .Enrich.FromLogContext()
             .Enrich.WithProperty(BandUpLogProperties.Service, serviceName)
+            .Filter.ByExcluding(IsUnsafeWritingEvent)
             .WriteTo.Console(new BandUpJsonFormatter());
 
         if (additionalSink is not null)
@@ -52,6 +53,22 @@ public static class BandUpLoggerConfiguration
         }
 
         return logger.CreateLogger();
+    }
+
+    private static bool IsUnsafeWritingEvent(LogEvent entry)
+    {
+        if (!entry.Properties.ContainsKey(BandUpLogProperties.PrivateWritingRequest))
+        {
+            return false;
+        }
+
+        // Framework and provider diagnostics can include raw exception details, parameters or headers.
+        return entry.Exception is not null ||
+            !entry.Properties.TryGetValue("SourceContext", out var source) ||
+            source is not ScalarValue { Value: string category } ||
+            (category != "BandUp.Api.Middleware.RequestLoggingMiddleware" &&
+             category != "BandUp.Api.Errors.BandUpExceptionHandler" &&
+             !category.StartsWith("BandUp.Application.Behaviors.LoggingBehavior", StringComparison.Ordinal));
     }
 
     private static LogEventLevel ParseLevel(string? value) => value?.ToLowerInvariant() switch

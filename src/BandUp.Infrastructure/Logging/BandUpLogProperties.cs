@@ -16,6 +16,7 @@ public static class BandUpLogProperties
     public const string DurationMs = "durationMs";
     public const string Service = "service";
     public const string Exception = "exception";
+    public const string PrivateWritingRequest = "privateWritingRequest";
 
     /// <summary>
     /// Names the formatter lifts to the top level of the JSON object rather than nesting

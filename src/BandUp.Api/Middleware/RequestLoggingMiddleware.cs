@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using BandUp.Api;
+using BandUp.Api.Endpoints.Writing;
 using BandUp.Application.Abstractions;
 using BandUp.Infrastructure.Logging;
 using Serilog.Context;
@@ -36,6 +37,10 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, ILogger<Reque
 
         long started = Stopwatch.GetTimestamp();
         string method = httpContext.Request.Method;
+        var endpoint = httpContext.GetEndpoint();
+        // Exception handling can clear the endpoint before the completion callback runs.
+        string? privateRoute = endpoint?.Metadata.GetMetadata<PrivateWritingResponse>() is not null
+            ? endpoint.DisplayName ?? "/api/writing" : null;
 
         // The status code is only final once the response completes, which is after the
         // exception handler has run, so the line is written from the completion callback.
@@ -51,7 +56,7 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, ILogger<Reque
             logger.LogInformation(
                 "{method} {route} responded {statusCode} in {durationMs}ms",
                 method,
-                RouteOf(httpContext),
+                privateRoute ?? RouteOf(httpContext),
                 httpContext.Response.StatusCode,
                 elapsedMs);
 

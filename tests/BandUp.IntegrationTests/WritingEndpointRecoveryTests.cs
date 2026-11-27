@@ -60,7 +60,7 @@ public sealed partial class WritingEndpointTests
         }
 
         AssertFreshRecovery(probe, user.Id);
-        AssertPostgresConflict<WritingSubmissionKeyConflictException>(logs, "writing", "writing_submissions",
+        AssertPostgresConflict<WritingSubmissionKeyConflictException>(probe.SaveFailure, "writing", "writing_submissions",
             "ix_writing_submissions_user_id_idempotency_key");
         using var verification = factory.Services.CreateScope();
         var db = verification.ServiceProvider.GetRequiredService<BandUpDbContext>();
@@ -93,13 +93,13 @@ public sealed partial class WritingEndpointTests
         await AssertProblem(response, HttpStatusCode.InternalServerError, Error.InternalErrorCode);
         Assert.Null(response.Headers.Location);
         AssertFreshRecovery(probe, user.Id);
-        AssertPostgresConflict<WritingSubmissionKeyConflictException>(logs, "writing", "writing_submissions",
+        AssertPostgresConflict<WritingSubmissionKeyConflictException>(probe.SaveFailure, "writing", "writing_submissions",
             "ix_writing_submissions_user_id_idempotency_key");
         await AssertUnchangedSignupState(factory, user.Id);
     }
 
     [Fact]
-    public async Task UnrelatedPostgresUniqueViolationUsesTheExistingErrorPathWithoutRecovery()
+    public async Task UnrelatedPostgresUniqueViolationReturnsInternalErrorWithoutRecovery()
     {
         var probe = new ConflictProbe(ConflictKind.Unrelated);
         var logs = new TestLogSink();
@@ -110,12 +110,12 @@ public sealed partial class WritingEndpointTests
         probe.Armed = true;
 
         using var response = await Post(client, user, Payload(prompt), probe.Key.ToString());
-        await AssertProblem(response, HttpStatusCode.Conflict, Error.EmailTakenCode);
+        await AssertProblem(response, HttpStatusCode.InternalServerError, Error.InternalErrorCode);
         Assert.Null(response.Headers.Location);
         Assert.Equal(1, probe.CommandRuns);
         Assert.Equal(2, probe.Lookups.Count);
         Assert.Same(probe.Lookups[0].Context, probe.Lookups[1].Context);
-        AssertPostgresConflict<DuplicateEntityException>(logs, "billing", "credit_accounts", "ix_credit_accounts_user_id");
+        AssertPostgresConflict<DuplicateEntityException>(probe.SaveFailure, "billing", "credit_accounts", "ix_credit_accounts_user_id");
         await AssertUnchangedSignupState(factory, user.Id);
     }
 
@@ -123,6 +123,9 @@ public sealed partial class WritingEndpointTests
         overrides: new() { ["Features:WritingSubmissionEnabled"] = "true" }, logSink: logs,
         configureServices: services =>
         {
+            services.RemoveAll<IUnitOfWork>();
+            services.AddScoped<IUnitOfWork>(sp => new ConflictProbeUnitOfWork(
+                new EfUnitOfWork(sp.GetRequiredService<BandUpDbContext>()), probe));
             services.RemoveAll<IWritingSubmissionStore>();
             services.AddScoped<IWritingSubmissionStore>(sp => new ConflictProbeStore(
                 sp.GetRequiredService<EfWritingSubmissionStore>(), sp.GetRequiredService<BandUpDbContext>(), probe));
@@ -146,17 +149,16 @@ public sealed partial class WritingEndpointTests
         Assert.False(probe.RecoveryHadTransaction);
     }
 
-    private static void AssertPostgresConflict<T>(TestLogSink logs, string schema, string table, string constraint)
+    private static void AssertPostgresConflict<T>(Exception? exception, string schema, string table, string constraint)
         where T : Exception
     {
-        Assert.Contains(logs.Events, entry => entry.Exception is T
-        {
-            InnerException: DbUpdateException
-            {
-                InnerException: PostgresException postgres
-            }
-        } && postgres.SqlState == PostgresErrorCodes.UniqueViolation &&
-            postgres.SchemaName == schema && postgres.TableName == table && postgres.ConstraintName == constraint);
+        var wrapper = Assert.IsType<T>(exception);
+        var update = Assert.IsType<DbUpdateException>(wrapper.InnerException);
+        var postgres = Assert.IsType<PostgresException>(update.InnerException);
+        Assert.Equal(PostgresErrorCodes.UniqueViolation, postgres.SqlState);
+        Assert.Equal(schema, postgres.SchemaName);
+        Assert.Equal(table, postgres.TableName);
+        Assert.Equal(constraint, postgres.ConstraintName);
     }
 
     private static async Task AssertUnchangedSignupState(BandUpApiFactory factory, Guid owner)
@@ -177,9 +179,30 @@ public sealed partial class WritingEndpointTests
         public Guid Key { get; } = Guid.NewGuid();
         public bool Armed { get; set; }
         public int CommandRuns { get; set; }
+        public Exception? SaveFailure { get; set; }
         public bool FailedContextWasDisposedBeforeRecovery { get; set; }
         public bool RecoveryHadTransaction { get; set; }
         public List<(Guid Owner, Guid Key, BandUpDbContext Context)> Lookups { get; } = [];
+    }
+
+    private sealed class ConflictProbeUnitOfWork(IUnitOfWork inner, ConflictProbe probe) : IUnitOfWork
+    {
+        public async Task<int> SaveChangesAsync(CancellationToken ct)
+        {
+            try
+            {
+                return await inner.SaveChangesAsync(ct);
+            }
+            catch (Exception exception)
+            {
+                probe.SaveFailure = exception;
+                throw;
+            }
+        }
+
+        public Task BeginTransactionAsync(CancellationToken ct) => inner.BeginTransactionAsync(ct);
+        public Task CommitTransactionAsync(CancellationToken ct) => inner.CommitTransactionAsync(ct);
+        public Task RollbackTransactionAsync(CancellationToken ct) => inner.RollbackTransactionAsync(ct);
     }
 
     private sealed class ConflictProbeStore(IWritingSubmissionStore inner, BandUpDbContext db, ConflictProbe probe)

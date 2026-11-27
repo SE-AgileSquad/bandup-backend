@@ -1,3 +1,4 @@
+using BandUp.Api.Endpoints.Writing;
 using BandUp.Application.Common;
 using BandUp.Domain.Common;
 using BandUp.Infrastructure.Logging;
@@ -19,7 +20,9 @@ public sealed class BandUpExceptionHandler(ILogger<BandUpExceptionHandler> logge
         CancellationToken cancellationToken)
     {
         string requestId = RequestContext.From(httpContext)?.RequestId ?? string.Empty;
-        string route = httpContext.Request.Path.Value ?? "/";
+        var originalEndpoint = httpContext.Features.Get<IExceptionHandlerFeature>()?.Endpoint ?? httpContext.GetEndpoint();
+        bool writing = originalEndpoint?.Metadata.GetMetadata<PrivateWritingResponse>() is not null;
+        string route = writing ? originalEndpoint!.DisplayName ?? "/api/writing" : httpContext.Request.Path.Value ?? "/";
 
         // This handler runs after the request middleware has unwound, so the ambient log
         // context is gone: the request id has to be restored for the line to be traceable.
@@ -33,7 +36,11 @@ public sealed class BandUpExceptionHandler(ILogger<BandUpExceptionHandler> logge
                 return true;
             }
 
-            if (exception is DomainException)
+            if (writing)
+            {
+                logger.LogError("Writing request failed while handling {route} ({exceptionType})", route, exception.GetType().Name);
+            }
+            else if (exception is DomainException)
             {
                 logger.LogError(exception, "Domain invariant violated while handling {route}", route);
             }
@@ -43,9 +50,9 @@ public sealed class BandUpExceptionHandler(ILogger<BandUpExceptionHandler> logge
             }
         }
 
-        // A unique-index race is an expected conflict (AUTH-02), not an unhandled fault: it
-        // surfaces as 409 with a stable code rather than a 500.
-        if (exception is DuplicateEntityException)
+        // Writing resolves its exact idempotency constraint at the endpoint. Other Writing
+        // uniqueness errors are infrastructure failures, with no email conflict to report.
+        if (!writing && exception is DuplicateEntityException)
         {
             ProblemDetails conflict = ProblemDetailsFactory.ForError(Error.EmailTaken(), httpContext);
 

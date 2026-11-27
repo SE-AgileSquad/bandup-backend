@@ -38,7 +38,8 @@ public sealed class WritingEndpoints(IConfiguration configuration) : IEndpointGr
             .WithMetadata(new PrivateWritingResponse())
             .RequireAuthorization()
             .Produces<WritingPromptListDto>()
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         endpoints.MapPost("/submissions", SubmitAsync)
             .WithName("Writing_Submit")
@@ -50,22 +51,40 @@ public sealed class WritingEndpoints(IConfiguration configuration) : IEndpointGr
             .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
-            .ProducesProblem(StatusCodes.Status413PayloadTooLarge);
+            .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         var reads = endpoints.MapGroup("/submissions")
             .WithMetadata(new PrivateWritingResponse())
             .RequireAuthorization();
 
-        reads.MapGet("", ListSubmissionsAsync).WithName("Writing_ListSubmissions");
+        reads.MapGet("", ListSubmissionsAsync).WithName("Writing_ListSubmissions")
+            .Produces<PagedResult<WritingSubmissionHistoryItemDto>>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
         reads.MapGet("/{id:guid}", (Guid id, IDispatcher dispatcher, HttpContext context, CancellationToken ct) =>
             ReadAsync<GetWritingStatusQuery, WritingEvaluationStatusDto>(new(id), dispatcher, context, ct))
-            .WithName("Writing_GetStatus");
+            .WithName("Writing_GetStatus")
+            .Produces<WritingEvaluationStatusDto>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
         reads.MapGet("/{id:guid}/detail", (Guid id, IDispatcher dispatcher, HttpContext context, CancellationToken ct) =>
             ReadAsync<GetWritingDetailQuery, WritingSubmissionDetailDto>(new(id), dispatcher, context, ct))
-            .WithName("Writing_GetDetail");
+            .WithName("Writing_GetDetail")
+            .Produces<WritingSubmissionDetailDto>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
         reads.MapGet("/{id:guid}/result", (Guid id, IDispatcher dispatcher, HttpContext context, CancellationToken ct) =>
             ReadAsync<GetWritingResultQuery, WritingEvaluationResultDto>(new(id), dispatcher, context, ct))
-            .WithName("Writing_GetResult");
+            .WithName("Writing_GetResult")
+            .Produces<WritingEvaluationResultDto>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
     }
 
     private static Task<IResult> ListSubmissionsAsync(IDispatcher dispatcher, HttpContext context, CancellationToken ct)

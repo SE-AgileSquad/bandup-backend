@@ -171,6 +171,7 @@ public sealed partial class WritingEndpointTests(BandUpTestEnvironment environme
         var exact = json + new string(' ', 65_536 - Encoding.UTF8.GetByteCount(json));
         using var tooLarge = await Post(client, user, exact + " ", key, chunked: chunked);
         await AssertProblem(tooLarge, HttpStatusCode.RequestEntityTooLarge, "VALIDATION_ERROR");
+        await AssertUnchangedSignupState(factory, user.Id);
         using var accepted = await Post(client, user, exact, key, chunked: chunked);
         Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
         await AssertAccount(factory, user.Id, charges: 1);
@@ -190,6 +191,14 @@ public sealed partial class WritingEndpointTests(BandUpTestEnvironment environme
         Assert.Equal("true", Assert.Single(response.Headers.GetValues("Access-Control-Allow-Credentials")));
         Assert.Contains("idempotency-key", string.Join(",", response.Headers.GetValues("Access-Control-Allow-Headers"))
             .Split(',', StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase);
+
+        using HttpRequestMessage denied = new(HttpMethod.Options, Submissions);
+        denied.Headers.Add("Origin", "https://unapproved.example.test");
+        denied.Headers.Add("Access-Control-Request-Method", "POST");
+        denied.Headers.Add("Access-Control-Request-Headers", "content-type,x-requested-with,idempotency-key");
+        using var deniedResponse = await client.SendAsync(denied);
+        Assert.False(deniedResponse.Headers.Contains("Access-Control-Allow-Origin"));
+        Assert.False(deniedResponse.Headers.Contains("Access-Control-Allow-Credentials"));
     }
 
     private static async Task<HttpResponseMessage> Post(HttpClient client, ContentTestData.TestUser? user,

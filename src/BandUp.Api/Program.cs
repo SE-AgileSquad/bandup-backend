@@ -34,9 +34,15 @@ if (!string.IsNullOrWhiteSpace(sentryDsn))
         options.Dsn = sentryDsn;
         options.Environment = builder.Environment.EnvironmentName;
         options.SendDefaultPii = false;
+        options.MaxRequestBodySize = Sentry.Extensibility.RequestSize.None;
         options.AutoSessionTracking = false;
         options.SetBeforeSend((@event, _) =>
         {
+            // Writing retains sanitized application logs without sending private diagnostics.
+            if (@event.Tags.ContainsKey(BandUpLogProperties.PrivateWritingRequest))
+            {
+                return null;
+            }
             @event.SetTag("service", BandUpLoggerConfiguration.Api);
             return @event;
         });
