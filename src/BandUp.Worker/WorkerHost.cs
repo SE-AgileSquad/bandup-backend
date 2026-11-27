@@ -2,6 +2,7 @@ using BandUp.Application;
 using BandUp.Infrastructure;
 using BandUp.Infrastructure.Logging;
 using BandUp.Worker.Consumers;
+using BandUp.Worker.Writing;
 using Microsoft.Extensions.Hosting;
 using Sentry;
 using Serilog;
@@ -48,6 +49,11 @@ public static class WorkerHost
                 options.AutoSessionTracking = false;
                 options.SetBeforeSend((@event, _) =>
                 {
+                    if (@event.Tags.ContainsKey(BandUpLogProperties.PrivateWritingPublication) ||
+                        @event.Tags.ContainsKey(BandUpLogProperties.PrivateWritingExpiration))
+                    {
+                        return null;
+                    }
                     @event.SetTag("service", BandUpLoggerConfiguration.Worker);
                     return @event;
                 });
@@ -61,9 +67,11 @@ public static class WorkerHost
 
         builder.Services
             .AddApplication()
-            .AddInfrastructure(builder.Configuration);
+            .AddInfrastructure(builder.Configuration, initializeBrokerOnStartup: false);
 
         builder.Services.AddHostedService<PingConsumer>();
+        builder.Services.AddHostedService<WritingBackgroundPublisher>();
+        builder.Services.AddHostedService<WritingExpirationService>();
 
         return builder.Build();
     }

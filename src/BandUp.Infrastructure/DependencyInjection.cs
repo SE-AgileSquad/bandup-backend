@@ -11,6 +11,7 @@ using BandUp.Application.Features.Learning.Admin.Mappings;
 using BandUp.Application.Features.Reading;
 using BandUp.Application.Features.Writing.Admin;
 using BandUp.Application.Features.Writing;
+using BandUp.Application.Features.Writing.Publishing;
 using BandUp.Application.Features.Writing.SubmitWritingEssay;
 using BandUp.Infrastructure.Caching;
 using BandUp.Infrastructure.Email;
@@ -37,7 +38,8 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        bool initializeBrokerOnStartup = true)
     {
         services.TryAddSingleton(configuration);
         services.TryAddSingleton(TimeProvider.System);
@@ -49,7 +51,7 @@ public static class DependencyInjection
 
         services.AddPersistence();
         services.AddCaching(configuration);
-        services.AddMessaging(configuration);
+        services.AddMessaging(configuration, initializeBrokerOnStartup);
         services.AddSecurity(configuration);
         services.AddEmailDelivery();
         services.AddBilling();
@@ -197,6 +199,12 @@ public static class DependencyInjection
         services.AddScoped<IAdminWritingPromptStore, EfAdminWritingPromptStore>();
         services.AddScoped<EfWritingSubmissionStore>();
         services.AddScoped<IWritingSubmissionQueries, EfWritingSubmissionQueries>();
+        services.AddScoped<IWritingPublishingStore, EfWritingPublishingStore>();
+        services.AddScoped<IWritingExpirationScan, EfWritingExpirationScan>();
+        services.AddOptions<WritingPublishingOptions>().BindConfiguration(WritingPublishingOptions.SectionName)
+            .Validate(options => options.IsValid(),
+                "Writing publishing intervals, batching and retry settings must be within bounds, with PublishTimeout below LeaseDuration.")
+            .ValidateOnStart();
         services.AddScoped<IWritingSubmissionStore>(provider => provider.GetRequiredService<EfWritingSubmissionStore>());
         services.AddScoped<IWritingMutationWriter>(provider => provider.GetRequiredService<EfWritingSubmissionStore>());
         services.AddOptions<WritingAcceptanceSettings>().BindConfiguration("Writing:Acceptance")
@@ -277,7 +285,8 @@ public static class DependencyInjection
 
     private static IServiceCollection AddMessaging(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        bool initializeBrokerOnStartup)
     {
         services
             .AddOptions<MessagePublisherSettings>()
@@ -323,8 +332,10 @@ public static class DependencyInjection
         services.AddSingleton<IDirectMessagePublisher, RabbitMqPublisher>();
         services.AddScoped<IMessagePublisher, BufferedMessagePublisher>();
 
-        // Registered first so the exchange exists before any consumer starts reading.
-        services.AddHostedService<RabbitMqTopologyInitializer>();
+        if (initializeBrokerOnStartup)
+        {
+            services.AddHostedService<RabbitMqTopologyInitializer>();
+        }
 
         return services;
     }

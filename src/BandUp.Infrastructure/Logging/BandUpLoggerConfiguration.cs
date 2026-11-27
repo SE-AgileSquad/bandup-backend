@@ -57,7 +57,9 @@ public static class BandUpLoggerConfiguration
 
     private static bool IsUnsafeWritingEvent(LogEvent entry)
     {
-        if (!entry.Properties.ContainsKey(BandUpLogProperties.PrivateWritingRequest))
+        if (!entry.Properties.ContainsKey(BandUpLogProperties.PrivateWritingRequest) &&
+            !entry.Properties.ContainsKey(BandUpLogProperties.PrivateWritingPublication) &&
+            !entry.Properties.ContainsKey(BandUpLogProperties.PrivateWritingExpiration))
         {
             return false;
         }
@@ -68,6 +70,8 @@ public static class BandUpLoggerConfiguration
             source is not ScalarValue { Value: string category } ||
             (category != "BandUp.Api.Middleware.RequestLoggingMiddleware" &&
              category != "BandUp.Api.Errors.BandUpExceptionHandler" &&
+             category != "BandUp.Worker.Writing.WritingBackgroundPublisher" &&
+             category != "BandUp.Worker.Writing.WritingExpirationService" &&
              !category.StartsWith("BandUp.Application.Behaviors.LoggingBehavior", StringComparison.Ordinal));
     }
 

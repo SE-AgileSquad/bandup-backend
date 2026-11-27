@@ -34,11 +34,14 @@ public sealed class RabbitMqTopology(MessageRoutes routes)
                     exclusive: false,
                     autoDelete: false,
                     cancellationToken: cancellationToken);
+            }
 
+            foreach (var (queue, routingKey) in routes.Bindings)
+            {
                 await channel.QueueBindAsync(
                     queue,
                     ExchangeName,
-                    routingKey: queue,
+                    routingKey: routingKey,
                     cancellationToken: cancellationToken);
             }
         }

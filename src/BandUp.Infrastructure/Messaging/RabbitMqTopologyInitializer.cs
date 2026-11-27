@@ -2,14 +2,12 @@ using BandUp.Infrastructure.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using RabbitMQ.Client;
 
 namespace BandUp.Infrastructure.Messaging;
 
 /// <summary>
-/// Opens the broker connection and declares the exchange and queues at startup. Both the API
-/// and the Worker register this, so a publisher can never target an exchange that no process
-/// has created yet, and the first health probe meets an already-warm connection.
+/// Warms the API's broker connection at startup. Workers acquire broker connections on demand
+/// so PostgreSQL-only services can start even during a broker outage.
 /// </summary>
 public sealed class RabbitMqTopologyInitializer(
     RabbitMqConnectionProvider connections,
@@ -23,9 +21,7 @@ public sealed class RabbitMqTopologyInitializer(
 
         try
         {
-            IConnection connection = await connections.GetConnectionAsync(cancellationToken);
-
-            await topology.DeclareAsync(connection, cancellationToken);
+            await connections.GetConnectionAsync(cancellationToken);
         }
         catch (Exception exception)
         {

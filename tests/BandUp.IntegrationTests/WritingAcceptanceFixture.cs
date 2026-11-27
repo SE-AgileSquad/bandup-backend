@@ -15,11 +15,12 @@ namespace BandUp.IntegrationTests;
 public abstract class WritingAcceptanceFixture(BandUpTestEnvironment environment)
 {
     protected static readonly string Essay = string.Join(" ", Enumerable.Repeat("cafe\u0301", 100)) + "\n";
+    protected BandUpTestEnvironment TestEnvironment { get; } = environment;
+
     protected static readonly CancellationToken Ct = CancellationToken.None;
 
-    protected string MigratedConnectionString => environment.MigratedConnectionString;
-
-    protected BandUpApiFactory Factory(TimeProvider? clock = null) => new(environment, configureServices: services =>
+    protected string MigratedConnectionString => TestEnvironment.MigratedConnectionString;
+    protected BandUpApiFactory Factory(TimeProvider? clock = null) => new(TestEnvironment, configureServices: services =>
     {
         services.AddScoped(_ => Substitute.For<ICurrentUser>());
         if (clock is not null)

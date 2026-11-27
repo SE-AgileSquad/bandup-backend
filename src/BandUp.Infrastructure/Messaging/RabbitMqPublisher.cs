@@ -13,9 +13,7 @@ public sealed class RabbitMqPublisher(RabbitMqConnectionProvider connections, Me
     public async Task PublishAsync<TMessage>(TMessage message, CancellationToken cancellationToken)
         where TMessage : class
     {
-        string queue = routes.QueueFor<TMessage>();
-        IChannel channel = await GetChannelAsync(cancellationToken);
-
+        string routingKey = routes.RoutingKeyFor<TMessage>();
         string messageId = Guid.NewGuid().ToString();
 
         BasicProperties properties = new()
@@ -32,13 +30,23 @@ public sealed class RabbitMqPublisher(RabbitMqConnectionProvider connections, Me
 
         byte[] body = JsonSerializer.SerializeToUtf8Bytes(message, JsonSerialization.Options);
 
-        await channel.BasicPublishAsync(
-            RabbitMqTopology.ExchangeName,
-            queue,
-            mandatory: true,
-            basicProperties: properties,
-            body: body,
-            cancellationToken: cancellationToken);
+        // The singleton channel must have a single writer, including while awaiting confirms.
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            IChannel channel = await GetChannelAsync(cancellationToken);
+            await channel.BasicPublishAsync(
+                RabbitMqTopology.ExchangeName,
+                routingKey,
+                mandatory: true,
+                basicProperties: properties,
+                body: body,
+                cancellationToken: cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -58,28 +66,18 @@ public sealed class RabbitMqPublisher(RabbitMqConnectionProvider connections, Me
             return _channel;
         }
 
-        await _gate.WaitAsync(cancellationToken);
-
-        try
+        if (_channel is not null)
         {
-            if (_channel is { IsOpen: true })
-            {
-                return _channel;
-            }
-
-            IConnection connection = await connections.GetConnectionAsync(cancellationToken);
-
-            _channel = await connection.CreateChannelAsync(
-                new CreateChannelOptions(
-                    publisherConfirmationsEnabled: true,
-                    publisherConfirmationTrackingEnabled: true),
-                cancellationToken);
-
-            return _channel;
+            await _channel.DisposeAsync();
+            _channel = null;
         }
-        finally
-        {
-            _gate.Release();
-        }
+
+        IConnection connection = await connections.GetConnectionAsync(cancellationToken);
+        _channel = await connection.CreateChannelAsync(
+            new CreateChannelOptions(
+                publisherConfirmationsEnabled: true,
+                publisherConfirmationTrackingEnabled: true),
+            cancellationToken);
+        return _channel;
     }
 }

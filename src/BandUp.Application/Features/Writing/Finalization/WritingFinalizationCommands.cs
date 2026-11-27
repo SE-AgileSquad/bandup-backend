@@ -8,4 +8,4 @@ namespace BandUp.Application.Features.Writing.Finalization;
 internal sealed record ClaimWriting(Guid SubmissionId) : ICommand<bool>;
 internal sealed record CompleteWriting(Guid SubmissionId, WritingFeedback Feedback) : ICommand<bool>;
 internal sealed record FailWriting(Guid SubmissionId) : ICommand<bool>;
-internal sealed record ExpireWriting(Guid SubmissionId) : ICommand<bool>;
+public sealed record ExpireWriting(Guid SubmissionId) : ICommand<bool>;
