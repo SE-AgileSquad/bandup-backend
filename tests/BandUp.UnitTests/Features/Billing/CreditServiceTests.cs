@@ -84,6 +84,36 @@ public sealed class CreditServiceTests
         _accounts.Stored.Balance.ShouldBe(0);
     }
 
+    [Fact]
+    public async Task ReservationsTrackOnlyNewMovementsAcrossMultipleReferences()
+    {
+        var owner = Guid.NewGuid();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var account = CreditAccount.Open(owner, 2, Now);
+        _accounts.Stored = account;
+        CreditService service = new(_accounts, _ledger, _time);
+        var ct = CancellationToken.None;
+        (await service.ChargeWritingAsync(owner, first, ct)).IsSuccess.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, second, ct)).IsSuccess.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, second, ct)).IsSuccess.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, Guid.NewGuid(), ct)).Error!.Type.ShouldBe(ErrorType.PaymentRequired);
+        (await service.RefundWritingAsync(owner, Guid.NewGuid(), ct)).IsFailure.ShouldBeTrue();
+        account.ReservedRefundCapacity.ShouldBe(2);
+        account.Balance.ShouldBe(0);
+        (await service.RefundWritingAsync(owner, first, ct)).IsSuccess.ShouldBeTrue();
+        (await service.RefundWritingAsync(owner, first, ct)).IsSuccess.ShouldBeTrue();
+        account.ReservedRefundCapacity.ShouldBe(1);
+        account.Balance.ShouldBe(1);
+
+        // Matching ledger evidence alone cannot fund a refund on an account with no headroom reserved.
+        var inconsistent = CreditAccount.Open(owner, 1, Now);
+        _accounts.Stored = inconsistent;
+        (await service.RefundWritingAsync(owner, second, ct)).Error!.Type.ShouldBe(ErrorType.Conflict);
+        inconsistent.ReservedRefundCapacity.ShouldBe(0);
+        inconsistent.Balance.ShouldBe(1);
+    }
+
     private sealed class TestCreditAccountRepository : ICreditAccountRepository
     {
         public CreditAccount? AddedAccount { get; private set; }

@@ -86,6 +86,11 @@ public sealed class CreditService(
                 "One credit is required for this evaluation.", ErrorType.PaymentRequired));
         }
 
+        // A replay has already returned above. Only a new refund consumes an existing reservation.
+        if (refund && account.ReservedRefundCapacity == 0)
+        {
+            return Result.Failure(Error.Conflict("No Writing refund capacity is reserved."));
+        }
         var entry = account.RecordTransaction(1, direction, reason, timeProvider.GetUtcNow(), submissionId);
         await ledgerRepository.AddAsync(entry, cancellationToken);
         return Result.Success();

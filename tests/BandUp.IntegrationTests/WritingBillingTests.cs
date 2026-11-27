@@ -238,7 +238,10 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         var sourceAccount = await db.CreditAccounts.SingleAsync(a => a.UserId == source);
         var reason = malformedRefund ? CreditLedgerEntry.WritingRefundReason : CreditLedgerEntry.WritingChargeReason;
         var direction = foreignOwner && !malformedRefund ? CreditDelta.Charge : CreditDelta.Grant;
-        db.Add(sourceAccount.RecordTransaction(foreignOwner ? 1 : 2, direction, reason, DateTimeOffset.UtcNow, reference));
+        // Simulate malformed historical evidence without minting an invalid Writing transaction.
+        var malformed = sourceAccount.RecordTransaction(foreignOwner ? 1 : 2, direction,
+            CreditLedgerEntry.AdminAdjustReason, DateTimeOffset.UtcNow, reference);
+        db.Add(malformed).Property(e => e.Reason).CurrentValue = reason;
         if (persisted)
         {
             await db.SaveChangesAsync();
@@ -314,7 +317,9 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
             referenced.Single(e => e.Reason == CreditLedgerEntry.WritingRefundReason).Delta.ShouldBe(1);
         }
         entries.Sum(e => e.Delta).ShouldBe(refund ? 3 : 2);
-        (await db.CreditAccounts.SingleAsync(e => e.UserId == owner)).Balance.ShouldBe(entries.Sum(e => e.Delta));
+        var account = await db.CreditAccounts.SingleAsync(e => e.UserId == owner);
+        account.Balance.ShouldBe(entries.Sum(e => e.Delta));
+        account.ReservedRefundCapacity.ShouldBe(refund ? 0 : 1);
     }
 
     [Fact]
@@ -355,6 +360,91 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         (await db.CreditAccounts.SingleAsync(e => e.UserId == owner)).Balance.ShouldBe(2);
     }
 
+    [Fact]
+    public async Task AdminCannotSpendReservedHeadroomAndRolledBackRefundCanRetry()
+    {
+        await using BandUpApiFactory factory = new(environment);
+        Guid owner = await SeedAsync(factory);
+        Guid actor = await SeedAsync(factory);
+        Guid reference = Guid.NewGuid();
+
+        async Task RunAsync(Func<ICreditService, Task<Result>> operation, bool success, bool rollback = false)
+        {
+            using var scope = factory.Services.CreateScope();
+            var work = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            await work.BeginTransactionAsync(Ct);
+            var result = await operation(scope.ServiceProvider.GetRequiredService<ICreditService>());
+            result.IsSuccess.ShouldBe(success);
+            if (!success)
+            {
+                result.Error!.Type.ShouldBe(ErrorType.Conflict);
+            }
+            await work.SaveChangesAsync(Ct);
+            if (rollback || !success)
+            {
+                await work.RollbackTransactionAsync(Ct);
+            }
+            else
+            {
+                await work.CommitTransactionAsync(Ct);
+            }
+        }
+
+        await RunAsync(c => c.ChargeWritingAsync(owner, reference, Ct), true);
+        await VerifyAsync(factory, owner, 0, reference);
+        await RunAsync(async c => await c.AdjustAsync(owner, int.MaxValue, actor, Guid.NewGuid(), "too much", Ct), false);
+        await RunAsync(async c => await c.AdjustAsync(owner, int.MaxValue - 1, actor, Guid.NewGuid(), "fits", Ct), true);
+        await RunAsync(c => c.RefundWritingAsync(owner, reference, Ct), true, rollback: true);
+        using var check = factory.Services.CreateScope();
+        var db = check.ServiceProvider.GetRequiredService<BandUpDbContext>();
+        var before = await db.CreditAccounts.AsNoTracking().SingleAsync(a => a.UserId == owner);
+        before.ReservedRefundCapacity.ShouldBe(1);
+        before.Balance.ShouldBe(int.MaxValue - 1);
+        await RunAsync(c => c.RefundWritingAsync(owner, reference, Ct), true);
+        await RunAsync(c => c.RefundWritingAsync(owner, reference, Ct), true);
+        var after = await db.CreditAccounts.AsNoTracking().SingleAsync(a => a.UserId == owner);
+        after.Balance.ShouldBe(int.MaxValue);
+        after.ReservedRefundCapacity.ShouldBe(0);
+        var ledger = await db.CreditLedger.Where(e => e.UserId == owner).ToListAsync();
+        ledger.Count.ShouldBe(4);
+        ledger.Sum(e => (long)e.Delta).ShouldBe((long)int.MaxValue);
+    }
+
+    [Fact]
+    public async Task TwoOutstandingChargesPersistAndMissingCapacityBlocksRefund()
+    {
+        await using BandUpApiFactory factory = new(environment);
+        Guid owner = await SeedAsync(factory);
+        Guid first = Guid.NewGuid();
+        Guid second = Guid.NewGuid();
+        using var setup = factory.Services.CreateScope();
+        var db = setup.ServiceProvider.GetRequiredService<BandUpDbContext>();
+        var credit = setup.ServiceProvider.GetRequiredService<ICreditService>();
+        await using (var tx = await db.Database.BeginTransactionAsync())
+        {
+            (await credit.AdjustAsync(owner, 1, owner, Guid.NewGuid(), "test funding", Ct)).IsSuccess.ShouldBeTrue();
+            (await credit.ChargeWritingAsync(owner, first, Ct)).IsSuccess.ShouldBeTrue();
+            (await credit.ChargeWritingAsync(owner, second, Ct)).IsSuccess.ShouldBeTrue();
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+        }
+        var stored = await db.CreditAccounts.AsNoTracking().SingleAsync(a => a.UserId == owner);
+        stored.ReservedRefundCapacity.ShouldBe(2);
+        stored.Balance.ShouldBe(0);
+
+        // Model a pre-reservation charge history. The database permits zero headroom;
+        // the service must still reject the refund without issuing credit.
+        await db.Database.ExecuteSqlAsync($"UPDATE billing.credit_accounts SET reserved_refund_capacity = 0 WHERE user_id = {owner}");
+        using var retry = factory.Services.CreateScope();
+        var retryDb = retry.ServiceProvider.GetRequiredService<BandUpDbContext>();
+        await using var refund = await retryDb.Database.BeginTransactionAsync();
+        var result = await retry.ServiceProvider.GetRequiredService<ICreditService>().RefundWritingAsync(owner, second, Ct);
+        result.Error!.Type.ShouldBe(ErrorType.Conflict);
+        retryDb.ChangeTracker.HasChanges().ShouldBeFalse();
+        await refund.RollbackAsync();
+        (await db.CreditLedger.CountAsync(e => e.ReferenceId == second)).ShouldBe(1);
+    }
+
     private static async Task<Guid> SeedAsync(BandUpApiFactory factory)
     {
         using var scope = factory.Services.CreateScope();
@@ -372,7 +462,9 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BandUpDbContext>();
-        (await db.CreditAccounts.SingleAsync(row => row.UserId == owner)).Balance.ShouldBe(balance);
+        var account = await db.CreditAccounts.SingleAsync(row => row.UserId == owner);
+        account.Balance.ShouldBe(balance);
+        account.ReservedRefundCapacity.ShouldBe(reference.HasValue && !refunded ? 1 : 0);
         var ledger = await db.CreditLedger.Where(row => row.UserId == owner).ToListAsync();
         var writing = ledger.Where(row => row.ReferenceId.HasValue).ToList();
         writing.Count.ShouldBe(reference is null ? 0 : refunded ? 2 : 1);
