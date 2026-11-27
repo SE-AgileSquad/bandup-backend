@@ -29,14 +29,44 @@ public sealed class EfUserRepository(BandUpDbContext context) : IUserRepository
     public Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken) =>
         context.Users.AnyAsync(user => user.Email == email, cancellationToken);
 
-    public Task<PagedResult<AdminUserDto>> ListForAdminAsync(PageRequest page, CancellationToken cancellationToken) =>
-        EfStoreOperations.ReadPageAsync(
-            context.Users.AsNoTracking().OrderBy(user => user.Email).ThenBy(user => user.Id)
-                .Select(user => new AdminUserDto(user.Id, user.DisplayName, user.Email, user.Role, user.IsActive)),
+    public Task<PagedResult<AdminUserDto>> ListForAdminAsync(
+        PageRequest page, Role? role, string? search, bool? isActive, CancellationToken cancellationToken)
+    {
+        IQueryable<User> users = context.Users.AsNoTracking();
+        if (role.HasValue)
+        {
+            users = users.Where(user => user.Role == role.Value);
+        }
+
+        if (isActive.HasValue)
+        {
+            users = users.Where(user => user.IsActive == isActive.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            string term = search.ToLowerInvariant();
+            users = users.Where(user => user.DisplayName.ToLower().Contains(term) || user.Email.ToLower().Contains(term));
+        }
+
+        return EfStoreOperations.ReadPageAsync(
+            users.OrderBy(user => user.Email).ThenBy(user => user.Id)
+                .Select(user => new AdminUserDto(
+                    user.Id, user.DisplayName, user.Email, user.Role, user.IsActive, user.CreatedAt,
+                    context.CreditAccounts.Where(account => account.UserId == user.Id)
+                        .Select(account => (int?)account.Balance).SingleOrDefault())),
             page, cancellationToken);
+    }
+
+    public Task<bool> IsActiveAsync(Guid userId, CancellationToken cancellationToken) =>
+        context.Users.AnyAsync(user => user.Id == userId && user.IsActive, cancellationToken);
 
     public Task<bool> IsActiveAdminAsync(Guid userId, CancellationToken cancellationToken) =>
-        context.Users.AnyAsync(user => user.Id == userId && user.Role == Role.Admin && user.IsActive, cancellationToken);
+        context.Users.AnyAsync(user => user.Id == userId && user.IsActive
+            && (user.Role == Role.Admin || user.Role == Role.SuperAdmin), cancellationToken);
+
+    public Task<bool> IsActiveSuperAdminAsync(Guid userId, CancellationToken cancellationToken) =>
+        context.Users.AnyAsync(user => user.Id == userId && user.Role == Role.SuperAdmin && user.IsActive, cancellationToken);
 
     public Task LockRoleChangesAsync(CancellationToken cancellationToken)
     {
@@ -46,6 +76,6 @@ public sealed class EfUserRepository(BandUpDbContext context) : IUserRepository
             $"SELECT pg_advisory_xact_lock({identityLockNamespace}, {roleChangesLock})", cancellationToken);
     }
 
-    public Task<int> CountActiveAdminsAsync(CancellationToken cancellationToken) =>
-        context.Users.CountAsync(user => user.Role == Role.Admin && user.IsActive, cancellationToken);
+    public Task<int> CountActiveSuperAdminsAsync(CancellationToken cancellationToken) =>
+        context.Users.CountAsync(user => user.Role == Role.SuperAdmin && user.IsActive, cancellationToken);
 }

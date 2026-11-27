@@ -67,7 +67,92 @@ public sealed class AdminContentRequestTests
         }
     }
 
-    private sealed class AuthorizationApiFactory(Guid? adminId = null) : WebApplicationFactory<Program>
+    [Theory]
+    [InlineData("GET", "/api/admin/users")]
+    [InlineData("POST", "/api/admin/users")]
+    [InlineData("PATCH", "/api/admin/users/01998a61-7ca4-7c0b-8051-9ee86f71afab/role")]
+    [InlineData("DELETE", "/api/admin/users/01998a61-7ca4-7c0b-8051-9ee86f71afab")]
+    [InlineData("GET", "/api/admin/users/01998a61-7ca4-7c0b-8051-9ee86f71afab/credits")]
+    [InlineData("GET", "/api/admin/users/01998a61-7ca4-7c0b-8051-9ee86f71afab/credits/history")]
+    [InlineData("POST", "/api/admin/users/01998a61-7ca4-7c0b-8051-9ee86f71afab/credits/adjustments")]
+    public async Task An_Ordinary_Admin_Cannot_Use_Any_User_Management_Endpoint_Even_With_A_Super_Admin_Claim(
+        string method, string path)
+    {
+        Guid actorId = Guid.CreateVersion7();
+        await using AuthorizationApiFactory factory = new(actorId, superAdmin: false);
+        using HttpClient client = factory.CreateClient();
+        AccessToken token = factory.Services.GetRequiredService<ITokenService>()
+            .CreateAccessToken(actorId, "SuperAdmin", TimeProvider.System.GetUtcNow());
+        using HttpRequestMessage request = new(new HttpMethod(method), path);
+        request.Headers.Add("Cookie", $"bu_at={token.Value}");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Theory]
+    [InlineData("User")]
+    [InlineData("Admin")]
+    [InlineData("SuperAdmin")]
+    public async Task A_Deactivated_Accounts_Existing_Token_Is_Rejected_On_Learner_Endpoints(string role)
+    {
+        Guid actorId = Guid.CreateVersion7();
+        await using AuthorizationApiFactory factory = new(actorId, active: false);
+        using HttpClient client = factory.CreateClient();
+        AccessToken token = factory.Services.GetRequiredService<ITokenService>()
+            .CreateAccessToken(actorId, role, TimeProvider.System.GetUtcNow());
+        using HttpRequestMessage request = new(HttpMethod.Get, "/api/reading/passages");
+        request.Headers.Add("Cookie", $"bu_at={token.Value}");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Both_Admin_Roles_Can_Manage_Content_And_Reach_Its_Validation(bool superAdmin)
+    {
+        Guid actorId = Guid.CreateVersion7();
+        await using AuthorizationApiFactory factory = new(actorId, superAdmin);
+        using HttpClient client = factory.CreateClient();
+        AccessToken token = factory.Services.GetRequiredService<ITokenService>()
+            .CreateAccessToken(actorId, superAdmin ? "SuperAdmin" : "Admin", TimeProvider.System.GetUtcNow());
+        using HttpRequestMessage request = new(HttpMethod.Post, "/api/admin/passages")
+        {
+            Content = JsonContent.Create(new { title = "", body = "" }),
+        };
+        request.Headers.Add("Cookie", $"bu_at={token.Value}");
+        request.Headers.Add("X-Requested-With", "bandup");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Owner")]
+    [InlineData("999")]
+    public async Task Creating_A_User_Rejects_Missing_And_Unsupported_Roles(string? role)
+    {
+        Guid actorId = Guid.CreateVersion7();
+        await using AuthorizationApiFactory factory = new(actorId);
+        using HttpClient client = factory.CreateClient();
+        AccessToken token = factory.Services.GetRequiredService<ITokenService>()
+            .CreateAccessToken(actorId, "SuperAdmin", TimeProvider.System.GetUtcNow());
+        using HttpRequestMessage request = new(HttpMethod.Post, "/api/admin/users")
+        {
+            Content = JsonContent.Create(new { email = "new@example.test", password = "StrongPassword1", displayName = "New", role }),
+        };
+        request.Headers.Add("Cookie", $"bu_at={token.Value}");
+        request.Headers.Add("X-Requested-With", "bandup");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    private sealed class AuthorizationApiFactory(Guid? adminId = null, bool superAdmin = true, bool active = true)
+        : WebApplicationFactory<Program>
     {
         protected override IHost CreateHost(IHostBuilder builder)
         {
@@ -97,8 +182,11 @@ public sealed class AdminContentRequestTests
             {
                 services.AddDataProtection().UseEphemeralDataProtectionProvider();
                 IUserRepository users = Substitute.For<IUserRepository>();
+                users.IsActiveAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(active);
                 users.IsActiveAdminAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
                     .Returns(call => call.ArgAt<Guid>(0) == adminId);
+                users.IsActiveSuperAdminAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+                    .Returns(call => superAdmin && call.ArgAt<Guid>(0) == adminId);
                 services.RemoveAll<IUserRepository>();
                 services.AddSingleton(users);
             });

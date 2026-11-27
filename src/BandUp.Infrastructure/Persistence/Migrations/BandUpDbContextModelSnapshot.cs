@@ -644,7 +644,7 @@ namespace BandUp.Infrastructure.Persistence.Migrations
 
                     b.ToTable("users", "identity", t =>
                         {
-                            t.HasCheckConstraint("users_role_check", "role IN ('User', 'Admin')");
+                            t.HasCheckConstraint("users_role_check", "role IN ('User', 'Admin', 'SuperAdmin')");
                         });
                 });
 

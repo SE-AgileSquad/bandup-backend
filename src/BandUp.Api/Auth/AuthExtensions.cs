@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.Security.Claims;
 
 namespace BandUp.Api.Auth;
 
@@ -18,6 +19,7 @@ namespace BandUp.Api.Auth;
 public static class AuthExtensions
 {
     public const string AdminPolicy = "Admin";
+    public const string SuperAdminPolicy = "SuperAdmin";
 
     public static IServiceCollection AddCookieJwtAuthentication(this IServiceCollection services)
     {
@@ -59,7 +61,8 @@ public static class AuthExtensions
                     },
                     OnTokenValidated = async context =>
                     {
-                        AccessTokenIdentity? identity = AccessTokenClaims.Read(context.Principal);
+                        AccessTokenIdentity? identity =
+                            AccessTokenClaims.Read(context.Principal);
 
                         if (identity is null)
                         {
@@ -67,12 +70,28 @@ public static class AuthExtensions
                             return;
                         }
 
-                        IAccessTokenRevocationStore revocations = context.HttpContext.RequestServices
-                            .GetRequiredService<IAccessTokenRevocationStore>();
+                        CancellationToken cancellationToken =
+                            context.HttpContext.RequestAborted;
 
-                        if (await revocations.IsRevokedAsync(identity.TokenId, context.HttpContext.RequestAborted))
+                        IAccessTokenRevocationStore revocations =
+                            context.HttpContext.RequestServices
+                                .GetRequiredService<IAccessTokenRevocationStore>();
+
+                        if (await revocations.IsRevokedAsync(
+                                identity.TokenId, cancellationToken))
                         {
                             context.Fail("Session revoked.");
+                            return;
+                        }
+
+                        IUserRepository users =
+                            context.HttpContext.RequestServices
+                                .GetRequiredService<IUserRepository>();
+
+                        if (!await users.IsActiveAsync(
+                                identity.UserId, cancellationToken))
+                        {
+                            context.Fail("The account is no longer active.");
                         }
                     },
                     OnChallenge = async context =>
@@ -86,9 +105,15 @@ public static class AuthExtensions
             });
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
-        services.AddAuthorization(options => options.AddPolicy(
-            AdminPolicy, policy => policy.RequireAuthenticatedUser().AddRequirements(new ActiveAdminRequirement())));
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy(AdminPolicy,
+                policy => policy.RequireAuthenticatedUser().AddRequirements(new ActiveAdminRequirement()));
+            options.AddPolicy(SuperAdminPolicy,
+                policy => policy.RequireAuthenticatedUser().AddRequirements(new ActiveSuperAdminRequirement()));
+        });
         services.AddScoped<IAuthorizationHandler, ActiveAdminHandler>();
+        services.AddScoped<IAuthorizationHandler, ActiveSuperAdminHandler>();
 
         return services;
     }

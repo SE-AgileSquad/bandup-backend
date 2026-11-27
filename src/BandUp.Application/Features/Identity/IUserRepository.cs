@@ -18,15 +18,20 @@ public interface IUserRepository : IRepository<User>
 
     Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken);
 
-    Task<PagedResult<AdminUserDto>> ListForAdminAsync(PageRequest page, CancellationToken cancellationToken);
+    Task<PagedResult<AdminUserDto>> ListForAdminAsync(
+        PageRequest page, Role? role, string? search, bool? isActive, CancellationToken cancellationToken);
+
+    Task<bool> IsActiveAsync(Guid userId, CancellationToken cancellationToken);
 
     Task<bool> IsActiveAdminAsync(Guid userId, CancellationToken cancellationToken);
 
-    /// <summary>Serializes role changes for the lifetime of the current transaction.</summary>
+    Task<bool> IsActiveSuperAdminAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>Serializes role changes and deactivation for the lifetime of the transaction.</summary>
     Task LockRoleChangesAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Guards AUTH-14: the last admin cannot be demoted.
+    /// The last active super admin cannot be demoted or deactivated.
     /// </summary>
-    Task<int> CountActiveAdminsAsync(CancellationToken cancellationToken);
+    Task<int> CountActiveSuperAdminsAsync(CancellationToken cancellationToken);
 }

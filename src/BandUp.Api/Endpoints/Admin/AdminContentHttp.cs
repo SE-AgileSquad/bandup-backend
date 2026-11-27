@@ -8,7 +8,13 @@ namespace BandUp.Api.Endpoints.Admin;
 internal static class AdminContentHttp
 {
     internal static RouteGroupBuilder RequireAdmin(IEndpointRouteBuilder endpoints) =>
-        endpoints.MapGroup("").RequireAuthorization(AuthExtensions.AdminPolicy)
+        RequirePolicy(endpoints, AuthExtensions.AdminPolicy);
+
+    internal static RouteGroupBuilder RequireSuperAdmin(IEndpointRouteBuilder endpoints) =>
+        RequirePolicy(endpoints, AuthExtensions.SuperAdminPolicy);
+
+    private static RouteGroupBuilder RequirePolicy(IEndpointRouteBuilder endpoints, string policy) =>
+        endpoints.MapGroup("").RequireAuthorization(policy)
             .WithMetadata(
                 new ProducesResponseTypeMetadata(StatusCodes.Status401Unauthorized, typeof(void), []),
                 new ProducesResponseTypeMetadata(StatusCodes.Status403Forbidden, typeof(void), []));
