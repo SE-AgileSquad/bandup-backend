@@ -180,6 +180,28 @@ public sealed class AdminContentRequestTests
         body.EnumerateObject().Count().ShouldBe(4);
     }
 
+    [Theory]
+    [InlineData("status=Unknown")]
+    [InlineData("status=999")]
+    [InlineData("search=")]
+    public async Task Invalid_Passage_Filters_Are_Rejected_Before_Reading_The_Database(string filter)
+    {
+        Guid actorId = Guid.CreateVersion7();
+        await using AuthorizationApiFactory factory = new(actorId);
+        using HttpClient client = factory.CreateClient();
+        AccessToken token = factory.Services.GetRequiredService<ITokenService>()
+            .CreateAccessToken(actorId, "Admin", TimeProvider.System.GetUtcNow());
+        if (filter == "search=")
+        {
+            filter += new string('a', 321);
+        }
+
+        using HttpRequestMessage request = new(HttpMethod.Get, $"/api/admin/passages?{filter}");
+        request.Headers.Add("Cookie", $"bu_at={token.Value}");
+        using HttpResponseMessage response = await client.SendAsync(request);
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
     private sealed class AuthorizationApiFactory(
         Guid? adminId = null, bool superAdmin = true, bool active = true, AdminDashboardDto? dashboard = null)
         : WebApplicationFactory<Program>

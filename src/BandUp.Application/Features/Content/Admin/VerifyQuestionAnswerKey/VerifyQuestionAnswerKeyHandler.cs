@@ -21,6 +21,14 @@ public sealed class VerifyQuestionAnswerKeyHandler(IAdminPassageStore store, ICu
             return Result<bool>.Failure(draft.Error!);
         }
 
+        PassagePublicationReadiness readiness = PassagePublicationReadiness.FromIssues(
+            draft.Value.GetPublicationIssues(requireVerification: false));
+        if (!readiness.IsReady)
+        {
+            return Result<bool>.Failure(Error.Conflict("The answer cannot be verified until its explanation is complete.")
+                with { ValidationErrors = readiness.Errors });
+        }
+
         if (draft.Value.AnswerKey is { IsVerified: true })
         {
             return Result<bool>.Success(true);

@@ -194,6 +194,10 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("title");
 
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
                     b.Property<string>("UsageBasis")
                         .IsRequired()
                         .HasColumnType("text")

@@ -8,5 +8,6 @@ public sealed class ListAdminPassagesHandler(IAdminPassageStore store)
 {
     public async Task<Result<PagedResult<PassageSummary>>> HandleAsync(
         ListAdminPassagesQuery query, CancellationToken cancellationToken) =>
-        Result<PagedResult<PassageSummary>>.Success(await store.ListAsync(query.Page, cancellationToken));
+        Result<PagedResult<PassageSummary>>.Success(
+            await store.ListAsync(query.Page, query.Status, query.Search?.Trim(), cancellationToken));
 }
