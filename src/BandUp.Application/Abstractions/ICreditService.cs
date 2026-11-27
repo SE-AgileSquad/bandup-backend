@@ -22,13 +22,6 @@ public interface ICreditService
     /// <summary>Hold the account row lock until the caller completes its transaction.</summary>
     Task LockAccountAsync(Guid userId, CancellationToken cancellationToken);
 
-    /// <summary>Debit once per submission. Acceptance locks the account before the prompt.</summary>
-    Task<Result> ChargeWritingAsync(Guid userId, Guid submissionId, CancellationToken cancellationToken);
-    /// <summary>Reverse a matching charge once and consume one unit of reserved capacity.
-    /// Terminal settlement must lock the account, then the submission, and verify its unsettled
-    /// state. Neither an existing debit nor aggregate capacity proves refund eligibility.</summary>
-    Task<Result> RefundWritingAsync(Guid userId, Guid submissionId, CancellationToken cancellationToken);
-
     /// <summary>The current balance, or null while no account exists yet.</summary>
     Task<int?> GetBalanceAsync(Guid userId, CancellationToken cancellationToken);
 

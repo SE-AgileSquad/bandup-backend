@@ -1,4 +1,5 @@
 using BandUp.Application.Abstractions;
+using BandUp.Application.Features.Billing;
 using BandUp.Application.Features.Writing;
 using BandUp.Application.Features.Writing.SubmitWritingEssay;
 using BandUp.Domain.Writing;
@@ -38,9 +39,11 @@ public sealed class WritingAcceptanceTests
         caller.IsAuthenticated.Returns(true);
         caller.UserId.Returns(owner);
         var store = Substitute.For<IWritingSubmissionStore>();
-        var credits = Substitute.For<ICreditService>();
+        var accounts = Substitute.For<ICreditAccountRepository>();
+        var ledger = Substitute.For<ICreditLedgerRepository>();
+        var credits = new CreditService(accounts, ledger, TimeProvider.System);
         store.FindByKeyAsync(owner, saved.IdempotencyKey, CancellationToken.None).Returns(saved);
-        var handler = new SubmitWritingEssayHandler(caller, store, credits, TimeProvider.System, new());
+        var handler = new SubmitWritingEssayHandler(caller, store, credits, TimeProvider.System, new(), null!);
         var command = new SubmitWritingEssayCommand(saved.IdempotencyKey, prompt.Id, changed ? "short" : essay);
         var result = await handler.HandleAsync(command, CancellationToken.None);
         if (changed)
@@ -51,7 +54,8 @@ public sealed class WritingAcceptanceTests
         {
             result.Value.ShouldBe(new WritingSubmissionAcceptedDto(saved.Id, now));
         }
-        credits.ReceivedCalls().ShouldBeEmpty();
+        accounts.ReceivedCalls().ShouldBeEmpty();
+        ledger.ReceivedCalls().ShouldBeEmpty();
         await store.DidNotReceiveWithAnyArgs().FindEligiblePromptAsync(default, default);
     }
 }

@@ -2,6 +2,7 @@ using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
 using BandUp.Application.Features.Billing;
 using BandUp.Domain.Billing;
+using BandUp.Domain.Common;
 using BandUp.Application.Features.Billing.Admin;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -60,6 +61,20 @@ public sealed class CreditServiceTests
         int? balance = await service.GetBalanceAsync(userId, CancellationToken.None);
 
         balance.ShouldBe(7);
+    }
+
+    [Theory]
+    [InlineData(CreditLedgerEntry.WritingChargeReason, CreditDelta.Charge)]
+    [InlineData(CreditLedgerEntry.WritingRefundReason, CreditDelta.Grant)]
+    public void GenericCreditPostingRejectsWritingMovements(string reason, CreditDelta direction)
+    {
+        var reference = Guid.NewGuid();
+        var account = CreditAccount.Open(Guid.NewGuid(), 1, Now);
+
+        Should.Throw<DomainException>(() =>
+            account.RecordTransaction(1, direction, reason, Now, reference));
+        account.Balance.ShouldBe(1);
+        account.ReservedRefundCapacity.ShouldBe(0);
     }
 
     [Fact]

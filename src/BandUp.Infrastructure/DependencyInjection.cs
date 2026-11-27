@@ -195,7 +195,9 @@ public static class DependencyInjection
         services.AddScoped<IAdminLessonStore, EfAdminLessonStore>();
         services.AddScoped<IAdminLessonMappingStore, EfAdminLessonMappingStore>();
         services.AddScoped<IAdminWritingPromptStore, EfAdminWritingPromptStore>();
-        services.AddScoped<IWritingSubmissionStore, EfWritingSubmissionStore>();
+        services.AddScoped<EfWritingSubmissionStore>();
+        services.AddScoped<IWritingSubmissionStore>(provider => provider.GetRequiredService<EfWritingSubmissionStore>());
+        services.AddScoped<IWritingMutationWriter>(provider => provider.GetRequiredService<EfWritingSubmissionStore>());
         services.AddOptions<WritingAcceptanceSettings>().BindConfiguration("Writing:Acceptance")
             .Validate(settings => settings.QueueTimeout >= TimeSpan.FromTicks(10),
                 "The queue timeout must be at least one PostgreSQL microsecond.").ValidateOnStart();
@@ -219,7 +221,8 @@ public static class DependencyInjection
 
     private static IServiceCollection AddBilling(this IServiceCollection services)
     {
-        services.AddScoped<ICreditService, CreditService>();
+        services.AddScoped<CreditService>();
+        services.AddScoped<ICreditService>(provider => provider.GetRequiredService<CreditService>());
         return services;
     }
 

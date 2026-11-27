@@ -44,21 +44,44 @@ public sealed class CreditService(
     public async Task LockAccountAsync(Guid userId, CancellationToken cancellationToken) =>
         await RequireAccountAsync(userId, cancellationToken);
 
-    public Task<Result> ChargeWritingAsync(Guid userId, Guid submissionId, CancellationToken cancellationToken) =>
-        ApplyWritingAsync(userId, submissionId, CreditDelta.Charge, cancellationToken);
+    internal abstract class WritingAcceptance(CreditService credits)
+    {
+        protected Task<CreditAccount> LockAcceptanceAccountAsync(Guid owner, CancellationToken ct) =>
+            credits.RequireAccountAsync(owner, ct);
 
-    public Task<Result> RefundWritingAsync(Guid userId, Guid submissionId, CancellationToken cancellationToken) =>
-        ApplyWritingAsync(userId, submissionId, CreditDelta.Grant, cancellationToken);
+        protected Task<Result> PostChargeAsync(CreditAccount lockedAccount, Guid submissionId, CancellationToken ct)
+        {
+            RequireSubmissionReference(submissionId);
+            return credits.ApplyWritingAsync(lockedAccount, submissionId, CreditDelta.Charge, ct);
+        }
+    }
 
-    private async Task<Result> ApplyWritingAsync(Guid userId, Guid submissionId, CreditDelta direction,
-        CancellationToken cancellationToken)
+    /// <summary>The financial posting primitive is available only inside settlement implementations.
+    /// The production handler verifies the locked submission before posting the refund.</summary>
+    internal abstract class WritingSettlement(CreditService credits)
+    {
+        protected Task<CreditAccount> LockSettlementAccountAsync(Guid owner, CancellationToken ct) =>
+            credits.RequireAccountAsync(owner, ct);
+
+        protected Task<Result> PostRefundAsync(CreditAccount lockedAccount, Guid submissionId, CancellationToken cancellationToken)
+        {
+            RequireSubmissionReference(submissionId);
+            return credits.ApplyWritingAsync(lockedAccount, submissionId, CreditDelta.Grant, cancellationToken);
+        }
+    }
+
+    private static void RequireSubmissionReference(Guid submissionId)
     {
         if (submissionId == Guid.Empty)
         {
             throw new ArgumentException("A submission reference is required.", nameof(submissionId));
         }
+    }
 
-        CreditAccount account = await RequireAccountAsync(userId, cancellationToken);
+    private async Task<Result> ApplyWritingAsync(CreditAccount account, Guid submissionId, CreditDelta direction,
+        CancellationToken cancellationToken)
+    {
+        var userId = account.UserId;
         bool refund = direction == CreditDelta.Grant;
         var charge = await ledgerRepository.FindAsync(CreditLedgerEntry.WritingChargeReason, submissionId, cancellationToken);
         if (charge is not null && (charge.UserId != userId || charge.Delta != -1))
@@ -91,7 +114,9 @@ public sealed class CreditService(
         {
             return Result.Failure(Error.Conflict("No Writing refund capacity is reserved."));
         }
-        var entry = account.RecordTransaction(1, direction, reason, timeProvider.GetUtcNow(), submissionId);
+        var entry = refund
+            ? account.RecordWritingRefund(submissionId, timeProvider.GetUtcNow())
+            : account.RecordWritingCharge(submissionId, timeProvider.GetUtcNow());
         await ledgerRepository.AddAsync(entry, cancellationToken);
         return Result.Success();
     }

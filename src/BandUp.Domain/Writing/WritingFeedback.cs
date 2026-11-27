@@ -28,6 +28,26 @@ public sealed class WritingFeedback : Entity
     public CriterionFeedback Lr => Content.Lr;
     public CriterionFeedback Gra => Content.Gra;
     public decimal EstimatedOverallBand { get; private set; }
+
+    /// <summary>Evidence quotes refer to the original essay, including its exact Unicode representation.</summary>
+    public bool HasEvidenceIn(string essay) =>
+        new[] { Tr, Cc, Lr, Gra }.All(c => c.Evidence is null ||
+            c.Evidence.All(e => essay.Contains(e.Excerpt, StringComparison.Ordinal)));
+
+    /// <summary>Compare the immutable feedback document, including the order of its lists, on terminal replay.</summary>
+    public bool MatchesFeedback(WritingFeedback? other) =>
+        other is not null && Id == other.Id && SchemaVersion == other.SchemaVersion &&
+        EstimatedOverallBand == other.EstimatedOverallBand && Summary == other.Summary &&
+        Same(Tr, other.Tr) && Same(Cc, other.Cc) && Same(Lr, other.Lr) && Same(Gra, other.Gra);
+
+    private static bool Same(CriterionFeedback left, CriterionFeedback right) =>
+        left.Score == right.Score && left.Explanation == right.Explanation &&
+        left.Strengths.SequenceEqual(right.Strengths) &&
+        left.AreasForImprovement.SequenceEqual(right.AreasForImprovement) &&
+        left.Recommendations.SequenceEqual(right.Recommendations) &&
+        (left.Evidence is null ? right.Evidence is null : right.Evidence is not null &&
+            left.Evidence.Select(e => (e.Excerpt, e.Observation))
+                .SequenceEqual(right.Evidence.Select(e => (e.Excerpt, e.Observation))));
 }
 
 /// <summary>Immutable validated content stored as a single versioned feedback document.</summary>

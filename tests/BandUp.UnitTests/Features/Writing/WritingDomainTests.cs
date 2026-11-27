@@ -40,6 +40,25 @@ public sealed class WritingDomainTests
     }
 
     [Fact]
+    public void FeedbackReplayComparesOrderedContentAndEvidenceAgainstTheOriginalEssay()
+    {
+        var id = Guid.NewGuid();
+        WritingFeedback Make(string quote, string observation, params string[] tips)
+        {
+            var tr = new CriterionFeedback(6, "Explanation", [], [], tips, [new WritingEvidence(quote, observation)]);
+            var other = Feedback(id).Cc;
+            return new WritingFeedback(id, "Summary", tr, other, other, other);
+        }
+        var original = Make("cafe\u0301", "detail", "first", "second");
+        Assert.True(original.HasEvidenceIn(Essay));
+        Assert.False(original.HasEvidenceIn(Essay.Normalize()));
+        Assert.True(original.MatchesFeedback(Make("cafe\u0301", "detail", "first", "second")));
+        Assert.False(original.MatchesFeedback(Make("cafe\u0301", "changed", "first", "second")));
+        Assert.False(original.MatchesFeedback(Make("cafe\u0301", "detail", "second", "first")));
+        Assert.False(original.MatchesFeedback(null));
+    }
+
+    [Fact]
     public void PromptEligibilityAndSnapshotAreIndependentAfterAcceptance()
     {
         Assert.Throws<DomainException>(() => WritingPrompt.CreateDraft("Title", "Text", "Opinion", 100, 350, Guid.Empty, Now));

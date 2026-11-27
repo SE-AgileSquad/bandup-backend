@@ -53,6 +53,22 @@ public sealed class CreditAccount : Entity
         Guid? createdByAdminId = null,
         string? note = null)
     {
+        if (reason is CreditLedgerEntry.WritingChargeReason or CreditLedgerEntry.WritingRefundReason)
+        {
+            throw new DomainException("Writing transactions require atomic acceptance or settlement.");
+        }
+        return ApplyTransaction(amount, deltaType, reason, now, referenceId, createdByAdminId, note);
+    }
+
+    internal CreditLedgerEntry RecordWritingCharge(Guid submissionId, DateTimeOffset now) =>
+        ApplyTransaction(1, CreditDelta.Charge, CreditLedgerEntry.WritingChargeReason, now, submissionId, null, null);
+
+    internal CreditLedgerEntry RecordWritingRefund(Guid submissionId, DateTimeOffset now) =>
+        ApplyTransaction(1, CreditDelta.Grant, CreditLedgerEntry.WritingRefundReason, now, submissionId, null, null);
+
+    private CreditLedgerEntry ApplyTransaction(int amount, CreditDelta deltaType, string reason, DateTimeOffset now,
+        Guid? referenceId, Guid? createdByAdminId, string? note)
+    {
         if (amount <= 0)
         {
             throw new DomainException("A credit transaction must carry a positive amount.");

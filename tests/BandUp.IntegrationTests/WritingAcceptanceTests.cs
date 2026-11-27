@@ -2,69 +2,111 @@ using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
 using BandUp.Application.Features.Writing;
 using BandUp.Application.Features.Writing.Admin;
+using BandUp.Application.Features.Writing.Finalization;
 using BandUp.Application.Features.Writing.SubmitWritingEssay;
 using BandUp.Domain.Billing;
-using BandUp.Domain.Identity;
 using BandUp.Domain.Writing;
-using BandUp.Infrastructure.Persistence;
 using BandUp.IntegrationTests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 using Shouldly;
 
 namespace BandUp.IntegrationTests;
 
 [Collection(BandUpCollection.Name)]
-public sealed class WritingAcceptanceTests(BandUpTestEnvironment environment)
+public sealed class WritingAcceptanceTests(BandUpTestEnvironment environment) : WritingAcceptanceFixture(environment)
 {
-    private static readonly string Essay = string.Join(" ", Enumerable.Repeat("cafe\u0301", 100)) + "\n";
-    private static readonly CancellationToken Ct = CancellationToken.None;
-
-    private BandUpApiFactory Factory() => new(environment, configureServices: services =>
-        services.AddScoped(_ => Substitute.For<ICurrentUser>()));
-
-    private static IServiceScope Scope(BandUpApiFactory factory, Guid owner)
-    {
-        var scope = factory.Services.CreateScope();
-        var caller = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
-        caller.IsAuthenticated.Returns(true);
-        caller.UserId.Returns(owner);
-        return scope;
-    }
-
-    private static BandUpDbContext Db(IServiceScope scope) => scope.ServiceProvider.GetRequiredService<BandUpDbContext>();
-    private static IUnitOfWork Work(IServiceScope scope) => scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-
-    private static Task<Result<WritingSubmissionAcceptedDto>> Send(IServiceScope scope, SubmitWritingEssayCommand command,
-        CancellationToken ct = default) => scope.ServiceProvider.GetRequiredService<IDispatcher>()
-            .SendAsync<SubmitWritingEssayCommand, WritingSubmissionAcceptedDto>(command, ct);
-
     private static Task<Result<WritingSubmissionAcceptedDto>> Handle(IServiceScope scope, SubmitWritingEssayCommand command) =>
         scope.ServiceProvider.GetRequiredService<ICommandHandler<SubmitWritingEssayCommand, WritingSubmissionAcceptedDto>>()
             .HandleAsync(command, Ct);
 
-    private static async Task<(Guid Owner, SubmitWritingEssayCommand Command)> Seed(BandUpApiFactory factory, int? balance = 1)
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SubmissionInsertRequiresAuthorizationForTheExactAcceptedValues(bool tamperWithAcceptedRow)
     {
-        using var scope = factory.Services.CreateScope();
+        await using var factory = Factory();
+        var (owner, command) = await Seed(factory);
+        using var scope = Scope(factory, owner);
+        await Work(scope).BeginTransactionAsync(Ct);
+        (await Handle(scope, command)).IsSuccess.ShouldBeTrue();
         var db = Db(scope);
-        var now = DateTimeOffset.UnixEpoch;
-        var user = User.Create($"{Guid.NewGuid():N}@example.test", "Learner", "hash", now);
-        var prompt = WritingPrompt.CreateDraft("Cities", "Discuss growth.", "Opinion", 100, 350, user.Id, now);
-        prompt.Publish(now);
-        db.AddRange(user, prompt);
-        if (balance.HasValue)
+        var accepted = db.WritingSubmissions.Local.Single();
+        if (tamperWithAcceptedRow)
         {
-            db.Add(CreditAccount.Open(user.Id, balance.Value, now));
+            db.Entry(accepted).Property(s => s.EssayText).CurrentValue = Essay + " changed";
         }
-        await db.SaveChangesAsync();
-        return (user.Id, new(Guid.NewGuid(), prompt.Id, Essay));
+        else
+        {
+            var prompt = await db.WritingPrompts.SingleAsync(p => p.Id == command.PromptId);
+            db.Set<WritingSubmission>().Add(new(owner, Guid.NewGuid(), prompt, Essay,
+                accepted.SubmittedAt, accepted.QueueDeadline));
+        }
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Work(scope).SaveChangesAsync(Ct));
+        error.Message.ShouldBe("Unauthorized Writing submission change.");
+
+        using var fresh = Scope(factory, owner);
+        var read = Db(fresh);
+        (await read.WritingSubmissions.AnyAsync(s => s.UserId == owner)).ShouldBeFalse();
+        var account = await read.CreditAccounts.SingleAsync(a => a.UserId == owner);
+        account.Balance.ShouldBe(1);
+        account.ReservedRefundCapacity.ShouldBe(0);
+        var grant = await read.CreditLedger.SingleAsync(e => e.UserId == owner);
+        grant.Reason.ShouldBe(CreditLedgerEntry.AdminGrantReason);
+        grant.Delta.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData(nameof(WritingSubmission.UserId))]
+    [InlineData(nameof(WritingSubmission.IdempotencyKey))]
+    [InlineData(nameof(WritingSubmission.PromptId))]
+    [InlineData("PromptTitle")]
+    [InlineData("PromptText")]
+    [InlineData(nameof(WritingSubmission.EssayText))]
+    [InlineData(nameof(WritingSubmission.SubmittedAt))]
+    [InlineData(nameof(WritingSubmission.QueueDeadline))]
+    public async Task ImmutableSubmissionFieldsCannotBeWritten(string field)
+    {
+        await using var factory = Factory();
+        var (owner, command) = await Seed(factory, 2);
+        using var initial = Scope(factory, owner);
+        var receipt = (await Send(initial, command)).Value;
+        using var scope = Scope(factory, owner);
+        await Work(scope).BeginTransactionAsync(Ct);
+        var db = Db(scope);
+        var original = await db.WritingSubmissions.AsNoTracking().SingleAsync(s => s.Id == receipt.SubmissionId);
+        (await Handle(scope, command with { IdempotencyKey = Guid.NewGuid() })).IsSuccess.ShouldBeTrue();
+        var row = await db.WritingSubmissions.SingleAsync(s => s.Id == receipt.SubmissionId);
+        var property = db.Entry(row).Property(field);
+        property.CurrentValue = property.CurrentValue switch
+        {
+            Guid => Guid.NewGuid(),
+            DateTimeOffset timestamp => timestamp.AddSeconds(1),
+            string value => value + " changed",
+            _ => throw new InvalidOperationException($"Unexpected property {field}.")
+        };
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Work(scope).SaveChangesAsync(Ct));
+        error.Message.ShouldBe("Unauthorized Writing submission change.");
+
+        using var fresh = Scope(factory, owner);
+        var read = Db(fresh);
+        var saved = await read.WritingSubmissions.SingleAsync(s => s.UserId == owner);
+        read.Entry(saved).Property(field).CurrentValue.ShouldBe(read.Entry(original).Property(field).CurrentValue);
+        saved.Status.ShouldBe(WritingEvaluationStatus.Queued);
+        var account = await read.CreditAccounts.SingleAsync(a => a.UserId == owner);
+        account.Balance.ShouldBe(1);
+        account.ReservedRefundCapacity.ShouldBe(1);
+        var ledger = await read.CreditLedger.Where(e => e.UserId == owner).ToListAsync();
+        ledger.Count.ShouldBe(2);
+        ledger.Single(e => e.Reason == CreditLedgerEntry.WritingChargeReason).ReferenceId.ShouldBe(saved.Id);
+        ledger.Sum(e => e.Delta).ShouldBe(account.Balance);
     }
 
     [Fact]
     public async Task ReplayUsesOriginalReceiptAfterArchivalAndTerminalTransition()
     {
-        await using var factory = Factory();
+        var clock = new TestClock();
+        await using var factory = Factory(clock);
         var (owner, command) = await Seed(factory);
         using var first = Scope(factory, owner);
         var receipt = (await Send(first, command)).Value;
@@ -75,15 +117,20 @@ public sealed class WritingAcceptanceTests(BandUpTestEnvironment environment)
         submission.QueueDeadline.ShouldBe(receipt.SubmittedAt.AddMinutes(5));
         submission.EssayText.ShouldBe(Essay);
         submission.PromptSnapshot.ShouldBe(new WritingPromptSnapshot(command.PromptId, "Cities", "Discuss growth."));
-        submission.Fail(submission.QueueDeadline);
+        clock.Advance(submission.QueueDeadline - clock.GetUtcNow());
         (await db.WritingPrompts.SingleAsync(p => p.Id == command.PromptId)).Archive(submission.QueueDeadline);
         await db.SaveChangesAsync();
+        using var archivedReplay = Scope(factory, owner);
+        (await Send(archivedReplay, command)).Value.ShouldBe(receipt);
+        using var expiry = Scope(factory, owner);
+        var dispatch = expiry.ServiceProvider.GetRequiredService<IDispatcher>();
+        (await dispatch.SendAsync<ExpireWriting, bool>(new(receipt.SubmissionId), Ct)).Value.ShouldBeTrue();
         using var replay = Scope(factory, owner);
         (await Send(replay, command)).Value.ShouldBe(receipt);
         (await Send(replay, command with { EssayText = Essay.Normalize() })).Error!.Code.ShouldBe(WritingErrorCodes.IdempotencyConflict);
         using var other = Scope(factory, owner);
         (await Send(other, command with { PromptId = Guid.NewGuid() })).Error!.Code.ShouldBe(WritingErrorCodes.IdempotencyConflict);
-        await Verify(factory, owner, receipt);
+        await Verify(factory, owner, receipt, expired: true);
     }
 
     [Theory]
@@ -118,6 +165,32 @@ public sealed class WritingAcceptanceTests(BandUpTestEnvironment environment)
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task OutstandingCountIncludesPendingAndFlushedAcceptance(bool flushFirst)
+    {
+        await using var factory = Factory();
+        var (owner, command) = await Seed(factory, 2);
+        using var scope = Scope(factory, owner);
+        await Work(scope).BeginTransactionAsync(Ct);
+        (await Handle(scope, command)).IsSuccess.ShouldBeTrue();
+        if (flushFirst)
+        {
+            await Work(scope).SaveChangesAsync(Ct);
+        }
+        (await Handle(scope, command with { IdempotencyKey = Guid.NewGuid() })).IsSuccess.ShouldBeTrue();
+        await Work(scope).SaveChangesAsync(Ct);
+        await Work(scope).CommitTransactionAsync(Ct);
+        using var fresh = Scope(factory, owner);
+        var db = Db(fresh);
+        (await db.WritingSubmissions.CountAsync(s => s.UserId == owner)).ShouldBe(2);
+        var account = await db.CreditAccounts.SingleAsync(a => a.UserId == owner);
+        account.ReservedRefundCapacity.ShouldBe(2);
+        account.Balance.ShouldBe(0);
+        (await db.CreditLedger.Where(e => e.UserId == owner).SumAsync(e => e.Delta)).ShouldBe(account.Balance);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task FailedTransactionLeavesKeyAndCreditAvailable(bool flush)
     {
         await using var factory = Factory();
@@ -133,7 +206,7 @@ public sealed class WritingAcceptanceTests(BandUpTestEnvironment environment)
         using var fresh = Scope(factory, owner);
         var db = Db(fresh);
         (await db.WritingSubmissions.AnyAsync(s => s.UserId == owner)).ShouldBeFalse();
-        (await db.CreditLedger.AnyAsync(e => e.UserId == owner)).ShouldBeFalse();
+        (await db.CreditLedger.AnyAsync(e => e.UserId == owner && e.Reason != CreditLedgerEntry.AdminGrantReason)).ShouldBeFalse();
         var account = await db.CreditAccounts.AsNoTracking().SingleAsync(a => a.UserId == owner);
         account.Balance.ShouldBe(1);
         account.ReservedRefundCapacity.ShouldBe(0);
@@ -227,23 +300,33 @@ public sealed class WritingAcceptanceTests(BandUpTestEnvironment environment)
             (await Send(request, command)).Error!.Code.ShouldBe(expected);
         }
         using var check = Scope(factory, owner);
-        (await Db(check).CreditLedger.AnyAsync(e => e.UserId == owner)).ShouldBeFalse();
+        (await Db(check).CreditLedger.AnyAsync(e => e.UserId == owner && e.Reason != CreditLedgerEntry.AdminGrantReason)).ShouldBeFalse();
         (await Db(check).WritingSubmissions.AnyAsync(s => s.UserId == owner)).ShouldBeFalse();
     }
 
-    private static async Task Verify(BandUpApiFactory factory, Guid owner, WritingSubmissionAcceptedDto receipt)
+    private static async Task Verify(BandUpApiFactory factory, Guid owner, WritingSubmissionAcceptedDto receipt, bool expired = false)
     {
         using var scope = Scope(factory, owner);
         var db = Db(scope);
         var submission = await db.WritingSubmissions.SingleAsync(s => s.UserId == owner);
         submission.Id.ShouldBe(receipt.SubmissionId);
         submission.SubmittedAt.ShouldBe(receipt.SubmittedAt);
-        var debit = await db.CreditLedger.SingleAsync(e => e.UserId == owner);
+        var ledger = await db.CreditLedger.Where(e => e.UserId == owner).ToListAsync();
+        var debit = ledger.Single(e => e.Reason == CreditLedgerEntry.WritingChargeReason);
         debit.Reason.ShouldBe(CreditLedgerEntry.WritingChargeReason);
         debit.ReferenceId.ShouldBe(submission.Id);
         debit.Delta.ShouldBe(-1);
         var account = await db.CreditAccounts.SingleAsync(a => a.UserId == owner);
-        account.Balance.ShouldBe(0);
-        account.ReservedRefundCapacity.ShouldBe(1);
+        account.Balance.ShouldBe(expired ? 1 : 0);
+        ledger.Sum(e => e.Delta).ShouldBe(account.Balance);
+        account.ReservedRefundCapacity.ShouldBe(expired ? 0 : 1);
+        submission.Status.ShouldBe(expired ? WritingEvaluationStatus.Failed : WritingEvaluationStatus.Queued);
+        if (expired)
+        {
+            var refund = ledger.Single(e => e.Reason == CreditLedgerEntry.WritingRefundReason);
+            refund.ReferenceId.ShouldBe(submission.Id);
+            refund.Delta.ShouldBe(1);
+            (await db.WritingFeedbacks.AnyAsync(f => f.Id == submission.Id)).ShouldBeFalse();
+        }
     }
 }

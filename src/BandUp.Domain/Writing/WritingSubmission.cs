@@ -73,7 +73,7 @@ public sealed class WritingSubmission : Entity
         StartedAt = now;
     }
 
-    public void Succeed(WritingFeedback feedback, DateTimeOffset now)
+    internal void Succeed(WritingFeedback feedback, DateTimeOffset now)
     {
         if (Status != WritingEvaluationStatus.Processing || feedback.Id != Id || now < StartedAt)
         {
@@ -83,7 +83,7 @@ public sealed class WritingSubmission : Entity
         CompletedAt = now;
     }
 
-    public void Fail(DateTimeOffset now)
+    internal void Fail(DateTimeOffset now)
     {
         bool eligible = Status switch
         {

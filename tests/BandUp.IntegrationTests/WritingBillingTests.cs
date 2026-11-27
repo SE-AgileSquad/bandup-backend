@@ -1,3 +1,4 @@
+using BandUp.Application.Features.Billing;
 using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
 using BandUp.Domain.Billing;
@@ -29,7 +30,7 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         Guid second = sameAccount ? first : await SeedAsync(factory);
         using var scope = factory.Services.CreateScope();
         var work = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var credit = scope.ServiceProvider.GetRequiredService<ICreditService>();
+        var credit = scope.ServiceProvider.GetRequiredService<CreditService>();
         await work.BeginTransactionAsync(Ct);
         (await credit.ChargeWritingAsync(first, Guid.NewGuid(), Ct)).IsSuccess.ShouldBeTrue();
         if (saveFirst)
@@ -40,7 +41,7 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         await Should.ThrowAsync<ObjectDisposedException>(() => work.BeginTransactionAsync(Ct));
         using var retry = factory.Services.CreateScope();
         work = retry.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        credit = retry.ServiceProvider.GetRequiredService<ICreditService>();
+        credit = retry.ServiceProvider.GetRequiredService<CreditService>();
         await work.BeginTransactionAsync(Ct);
         Guid valid = Guid.NewGuid();
         (await credit.ChargeWritingAsync(second, valid, Ct)).IsSuccess.ShouldBeTrue();
@@ -66,8 +67,8 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         using var second = factory.Services.CreateScope();
         var firstDb = first.ServiceProvider.GetRequiredService<BandUpDbContext>();
         var secondDb = second.ServiceProvider.GetRequiredService<BandUpDbContext>();
-        var firstCredit = first.ServiceProvider.GetRequiredService<ICreditService>();
-        var secondCredit = second.ServiceProvider.GetRequiredService<ICreditService>();
+        var firstCredit = first.ServiceProvider.GetRequiredService<CreditService>();
+        var secondCredit = second.ServiceProvider.GetRequiredService<CreditService>();
         if (refund)
         {
             await using var setup = await firstDb.Database.BeginTransactionAsync();
@@ -106,7 +107,7 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
             await VerifyAsync(factory, owner, 1, reference, refunded: true);
         }
 
-        Task<Result> ApplyAsync(ICreditService service, Guid id) => refund
+        Task<Result> ApplyAsync(CreditService service, Guid id) => refund
             ? service.RefundWritingAsync(owner, id, Ct)
             : service.ChargeWritingAsync(owner, id, Ct);
     }
@@ -119,7 +120,7 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         Guid reference = Guid.NewGuid();
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BandUpDbContext>();
-        var credit = scope.ServiceProvider.GetRequiredService<ICreditService>();
+        var credit = scope.ServiceProvider.GetRequiredService<CreditService>();
         await Should.ThrowAsync<InvalidOperationException>(() => credit.LockAccountAsync(owner, Ct));
         await using var tx = await db.Database.BeginTransactionAsync();
         (await credit.ChargeWritingAsync(owner, reference, Ct)).IsSuccess.ShouldBeTrue();
@@ -155,10 +156,10 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         using var b = factory.Services.CreateScope();
         var first = a.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var second = b.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var losingCredit = b.ServiceProvider.GetRequiredService<ICreditService>();
+        var losingCredit = b.ServiceProvider.GetRequiredService<CreditService>();
         await first.BeginTransactionAsync(Ct);
         await second.BeginTransactionAsync(Ct);
-        (await a.ServiceProvider.GetRequiredService<ICreditService>().ChargeWritingAsync(winner, reference, Ct)).IsSuccess.ShouldBeTrue();
+        (await a.ServiceProvider.GetRequiredService<CreditService>().ChargeWritingAsync(winner, reference, Ct)).IsSuccess.ShouldBeTrue();
         (await losingCredit.ChargeWritingAsync(loser, reference, Ct)).IsSuccess.ShouldBeTrue();
         await first.SaveChangesAsync(Ct);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -178,7 +179,7 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         var work = retry.ServiceProvider.GetRequiredService<IUnitOfWork>();
         await work.BeginTransactionAsync(Ct);
         Guid other = Guid.NewGuid();
-        (await retry.ServiceProvider.GetRequiredService<ICreditService>().ChargeWritingAsync(loser, other, Ct)).IsSuccess.ShouldBeTrue();
+        (await retry.ServiceProvider.GetRequiredService<CreditService>().ChargeWritingAsync(loser, other, Ct)).IsSuccess.ShouldBeTrue();
         await work.SaveChangesAsync(Ct);
         await work.CommitTransactionAsync(Ct);
         await VerifyAsync(factory, loser, 0, other);
@@ -194,9 +195,9 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         var holder = a.ServiceProvider.GetRequiredService<BandUpDbContext>();
         var waiter = b.ServiceProvider.GetRequiredService<BandUpDbContext>();
         var work = b.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var credit = b.ServiceProvider.GetRequiredService<ICreditService>();
+        var credit = b.ServiceProvider.GetRequiredService<CreditService>();
         await using var tx = await holder.Database.BeginTransactionAsync();
-        await a.ServiceProvider.GetRequiredService<ICreditService>().LockAccountAsync(owner, Ct);
+        await a.ServiceProvider.GetRequiredService<CreditService>().LockAccountAsync(owner, Ct);
         await work.BeginTransactionAsync(Ct);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var waiting = credit.ChargeWritingAsync(owner, Guid.NewGuid(), timeout.Token);
@@ -227,7 +228,7 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         Guid reference = Guid.NewGuid();
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BandUpDbContext>();
-        var credit = scope.ServiceProvider.GetRequiredService<ICreditService>();
+        var credit = scope.ServiceProvider.GetRequiredService<CreditService>();
         await using var tx = await db.Database.BeginTransactionAsync();
         await credit.LockAccountAsync(owner, Ct);
         var account = await db.CreditAccounts.SingleAsync(a => a.UserId == owner);
@@ -268,8 +269,8 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         Guid reference = Guid.NewGuid();
         using var first = factory.Services.CreateScope();
         using var second = factory.Services.CreateScope();
-        var a = first.ServiceProvider.GetRequiredService<ICreditService>();
-        var b = second.ServiceProvider.GetRequiredService<ICreditService>();
+        var a = first.ServiceProvider.GetRequiredService<CreditService>();
+        var b = second.ServiceProvider.GetRequiredService<CreditService>();
         var holder = first.ServiceProvider.GetRequiredService<BandUpDbContext>();
         var waiter = second.ServiceProvider.GetRequiredService<BandUpDbContext>();
         if (refund)
@@ -281,7 +282,7 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         }
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        async Task Apply(ICreditService service, bool admin)
+        async Task Apply(CreditService service, bool admin)
         {
             Result result = admin
                 ? await service.AdjustAsync(owner, 2, actor, reference, "review", timeout.Token)
@@ -333,7 +334,7 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         {
             using var scope = factory.Services.CreateScope();
             var work = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-            var credit = scope.ServiceProvider.GetRequiredService<ICreditService>();
+            var credit = scope.ServiceProvider.GetRequiredService<CreditService>();
             await work.BeginTransactionAsync(Ct);
             var adjustment = await credit.AdjustAsync(owner, 1, actor, reference, "retry", Ct);
             adjustment.Value.IsReplay.ShouldBeFalse();
@@ -368,12 +369,12 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         Guid actor = await SeedAsync(factory);
         Guid reference = Guid.NewGuid();
 
-        async Task RunAsync(Func<ICreditService, Task<Result>> operation, bool success, bool rollback = false)
+        async Task RunAsync(Func<CreditService, Task<Result>> operation, bool success, bool rollback = false)
         {
             using var scope = factory.Services.CreateScope();
             var work = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
             await work.BeginTransactionAsync(Ct);
-            var result = await operation(scope.ServiceProvider.GetRequiredService<ICreditService>());
+            var result = await operation(scope.ServiceProvider.GetRequiredService<CreditService>());
             result.IsSuccess.ShouldBe(success);
             if (!success)
             {
@@ -419,7 +420,7 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         Guid second = Guid.NewGuid();
         using var setup = factory.Services.CreateScope();
         var db = setup.ServiceProvider.GetRequiredService<BandUpDbContext>();
-        var credit = setup.ServiceProvider.GetRequiredService<ICreditService>();
+        var credit = setup.ServiceProvider.GetRequiredService<CreditService>();
         await using (var tx = await db.Database.BeginTransactionAsync())
         {
             (await credit.AdjustAsync(owner, 1, owner, Guid.NewGuid(), "test funding", Ct)).IsSuccess.ShouldBeTrue();
@@ -438,7 +439,7 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         using var retry = factory.Services.CreateScope();
         var retryDb = retry.ServiceProvider.GetRequiredService<BandUpDbContext>();
         await using var refund = await retryDb.Database.BeginTransactionAsync();
-        var result = await retry.ServiceProvider.GetRequiredService<ICreditService>().RefundWritingAsync(owner, second, Ct);
+        var result = await retry.ServiceProvider.GetRequiredService<CreditService>().RefundWritingAsync(owner, second, Ct);
         result.Error!.Type.ShouldBe(ErrorType.Conflict);
         retryDb.ChangeTracker.HasChanges().ShouldBeFalse();
         await refund.RollbackAsync();

@@ -1,44 +1,47 @@
+using BandUp.Application.Abstractions;
+using BandUp.Application.Features.Writing.Finalization;
 using BandUp.Domain.Billing;
 using BandUp.Domain.Identity;
 using BandUp.Domain.Writing;
 using BandUp.Infrastructure.Persistence;
 using BandUp.IntegrationTests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace BandUp.IntegrationTests;
 
 [Collection(BandUpCollection.Name)]
-public sealed class WritingPersistenceTests(BandUpTestEnvironment environment)
+public sealed class WritingPersistenceTests(BandUpTestEnvironment environment) : WritingAcceptanceFixture(environment)
 {
-    private static readonly DateTimeOffset Now = DateTimeOffset.UnixEpoch;
-    private static readonly string Essay = string.Join(" ", Enumerable.Repeat("cafe\u0301", 100)) + "\n";
+    private BandUpDbContext Context() => BandUpTestEnvironment.CreateContext(MigratedConnectionString);
 
-    private BandUpDbContext Context() => BandUpTestEnvironment.CreateContext(environment.MigratedConnectionString);
-
-    private static async Task<(WritingSubmission Submission, WritingPrompt Prompt)> SeedAsync(BandUpDbContext db)
+    private static async Task<WritingSubmission> SeedAsync(BandUpApiFactory factory, BandUpDbContext db)
     {
-        var user = User.Create($"{Guid.NewGuid():N}@example.test", "Learner", "hash", Now);
-        var prompt = WritingPrompt.CreateDraft("Transport", "Discuss public transport.", "Opinion", 100, 350, user.Id, Now);
-        prompt.Publish(Now);
-        var submission = new WritingSubmission(user.Id, Guid.NewGuid(), prompt, Essay, Now, Now.AddMinutes(5));
-        db.AddRange(user, prompt, submission);
-        await db.SaveChangesAsync();
-        return (submission, prompt);
+        var (owner, command) = await Seed(factory);
+        using var scope = Scope(factory, owner);
+        var id = (await Send(scope, command)).Value.SubmissionId;
+        return await db.WritingSubmissions.SingleAsync(s => s.Id == id);
     }
 
     [Fact]
     public async Task ArchivedPromptAndCompletedFeedbackRoundTripInFreshContext()
     {
-        await using var db = Context();
-        var (submission, prompt) = await SeedAsync(db);
-        var tr = new CriterionFeedback(6, "Position", ["Clear"], [], ["Expand"], [new WritingEvidence("essay", "Observation")]);
+        var clock = new TestClock();
+        await using var factory = Factory(clock);
+        var (owner, command) = await Seed(factory);
+        using var operation = Scope(factory, owner);
+        var id = (await Send(operation, command)).Value.SubmissionId;
+        var dispatcher = operation.ServiceProvider.GetRequiredService<IDispatcher>();
+        Assert.True((await dispatcher.SendAsync<ClaimWriting, bool>(new(id), Ct)).Value);
+        var tr = new CriterionFeedback(6, "Position", ["Clear"], [], ["Expand"], [new WritingEvidence("cafe\u0301", "Observation")]);
         var other = new CriterionFeedback(6.5m, "Structure", [], [], ["Revise"]);
-        var feedback = new WritingFeedback(submission.Id, "Summary", tr, other, other, other);
-        submission.StartProcessing(Now.AddMinutes(1));
-        submission.Succeed(feedback, Now.AddMinutes(2));
-        db.WritingFeedbacks.Add(feedback);
-        prompt.Archive(Now.AddDays(1));
+        var feedback = new WritingFeedback(id, "Summary", tr, other, other, other);
+        Assert.True((await dispatcher.SendAsync<CompleteWriting, bool>(new(id, feedback), Ct)).Value);
+        await using var db = Context();
+        var submission = await db.WritingSubmissions.SingleAsync(s => s.Id == id);
+        var prompt = await db.WritingPrompts.SingleAsync(p => p.Id == command.PromptId);
+        prompt.Archive(clock.GetUtcNow());
         await db.SaveChangesAsync();
 
         await using var reader = Context();
@@ -64,23 +67,30 @@ public sealed class WritingPersistenceTests(BandUpTestEnvironment environment)
             """).SingleAsync();
         Assert.True(shape);
         await using var duplicate = Context();
-        duplicate.Add(new WritingFeedback(submission.Id, "Second", other, other, other, other));
-        var error = await Assert.ThrowsAsync<DbUpdateException>(() => duplicate.SaveChangesAsync());
-        Assert.Equal(PostgresErrorCodes.UniqueViolation, Assert.IsType<PostgresException>(error.InnerException).SqlState);
+        await ExpectViolation(PostgresErrorCodes.UniqueViolation, () => duplicate.Database.ExecuteSqlAsync($"""
+            INSERT INTO writing.writing_feedbacks (submission_id, schema_version, estimated_overall_band, payload)
+            SELECT submission_id, schema_version, estimated_overall_band, payload
+            FROM writing.writing_feedbacks WHERE submission_id = {submission.Id}
+            """));
     }
 
     [Fact]
     public async Task DatabaseEnforcesOwnerKeyAndRestrictiveReferences()
     {
+        await using var factory = Factory();
         await using var db = Context();
-        var (submission, prompt) = await SeedAsync(db);
-        var duplicate = new WritingSubmission(submission.UserId, submission.IdempotencyKey, prompt, Essay, Now, submission.QueueDeadline);
-        db.Add(duplicate);
-        var error = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
-        Assert.Equal(PostgresErrorCodes.UniqueViolation, Assert.IsType<PostgresException>(error.InnerException).SqlState);
+        var submission = await SeedAsync(factory, db);
+        await ExpectViolation(PostgresErrorCodes.UniqueViolation, () => db.Database.ExecuteSqlAsync($"""
+            INSERT INTO writing.writing_submissions
+                (id, user_id, idempotency_key, prompt_id, prompt_title, prompt_text, essay_text,
+                 submitted_at, queue_deadline, publish_attempts, status)
+            SELECT {Guid.NewGuid()}, user_id, idempotency_key, prompt_id, prompt_title, prompt_text, essay_text,
+                   submitted_at, queue_deadline, publish_attempts, status
+            FROM writing.writing_submissions WHERE id = {submission.Id}
+            """));
         await using var check = Context();
         await ExpectViolation(PostgresErrorCodes.ForeignKeyViolation, () =>
-            check.Database.ExecuteSqlAsync($"DELETE FROM writing.writing_prompts WHERE id = {prompt.Id}"));
+            check.Database.ExecuteSqlAsync($"DELETE FROM writing.writing_prompts WHERE id = {submission.PromptId}"));
         await ExpectViolation(PostgresErrorCodes.ForeignKeyViolation, () =>
             check.Database.ExecuteSqlAsync($"UPDATE writing.writing_submissions SET user_id = {Guid.NewGuid()} WHERE id = {submission.Id}"));
         var entity = check.Model.FindEntityType(typeof(WritingSubmission))!;
@@ -95,9 +105,10 @@ public sealed class WritingPersistenceTests(BandUpTestEnvironment environment)
     [Fact]
     public async Task RefundCapacityDefaultsToZeroAndBoundsTheCombinedBalance()
     {
+        await using var factory = Factory();
+        var (owner, _) = await Seed(factory, balance: null);
         await using var db = Context();
-        var (submission, _) = await SeedAsync(db);
-        var account = CreditAccount.Open(submission.UserId, int.MaxValue, Now);
+        var account = CreditAccount.Open(owner, int.MaxValue, DateTimeOffset.UnixEpoch);
         db.Add(account);
         await db.SaveChangesAsync();
         await using var check = Context();
