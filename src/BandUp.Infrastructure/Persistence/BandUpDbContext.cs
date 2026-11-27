@@ -55,6 +55,10 @@ public sealed class BandUpDbContext(DbContextOptions<BandUpDbContext> options, T
 
     public DbSet<WritingPrompt> WritingPrompts => Set<WritingPrompt>();
 
+    public DbSet<WritingSubmission> WritingSubmissions => Set<WritingSubmission>();
+
+    public DbSet<WritingFeedback> WritingFeedbacks => Set<WritingFeedback>();
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         StampPassageUpdates();

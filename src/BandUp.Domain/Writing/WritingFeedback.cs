@@ -14,20 +14,31 @@ public sealed class WritingFeedback : Entity
         {
             throw new DomainException("A submission identity is required.");
         }
-        Summary = CriterionFeedback.RequireText(summary);
-        Tr = tr ?? throw new DomainException("TR is required.");
-        Cc = cc ?? throw new DomainException("CC is required.");
-        Lr = lr ?? throw new DomainException("LR is required.");
-        Gra = gra ?? throw new DomainException("GRA is required.");
+        Content = new WritingFeedbackContent(summary, tr, cc, lr, gra);
+        EstimatedOverallBand = BandScores.Overall(tr.Score, cc.Score, lr.Score, gra.Score);
     }
 
-    public string SchemaVersion => Version;
-    public string Summary { get; }
-    public CriterionFeedback Tr { get; }
-    public CriterionFeedback Cc { get; }
-    public CriterionFeedback Lr { get; }
-    public CriterionFeedback Gra { get; }
-    public decimal EstimatedOverallBand => BandScores.Overall(Tr.Score, Cc.Score, Lr.Score, Gra.Score);
+    private WritingFeedback() { }
+
+    public WritingFeedbackContent Content { get; private set; } = null!;
+    public string SchemaVersion { get; private set; } = Version;
+    public string Summary => Content.Summary;
+    public CriterionFeedback Tr => Content.Tr;
+    public CriterionFeedback Cc => Content.Cc;
+    public CriterionFeedback Lr => Content.Lr;
+    public CriterionFeedback Gra => Content.Gra;
+    public decimal EstimatedOverallBand { get; private set; }
+}
+
+/// <summary>Immutable validated content stored as a single versioned feedback document.</summary>
+public sealed class WritingFeedbackContent(string summary, CriterionFeedback tr, CriterionFeedback cc,
+    CriterionFeedback lr, CriterionFeedback gra)
+{
+    public string Summary { get; } = CriterionFeedback.RequireText(summary);
+    public CriterionFeedback Tr { get; } = tr ?? throw new DomainException("TR is required.");
+    public CriterionFeedback Cc { get; } = cc ?? throw new DomainException("CC is required.");
+    public CriterionFeedback Lr { get; } = lr ?? throw new DomainException("LR is required.");
+    public CriterionFeedback Gra { get; } = gra ?? throw new DomainException("GRA is required.");
 }
 
 public static class BandScores

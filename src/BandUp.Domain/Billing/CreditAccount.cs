@@ -22,6 +22,9 @@ public sealed class CreditAccount : Entity
 
     public int Balance { get; private set; }
 
+    /// <summary>Balance headroom held for outstanding Writing refunds.</summary>
+    public int ReservedRefundCapacity { get; private set; }
+
     public DateTimeOffset CreatedAt { get; private set; }
 
     public DateTimeOffset UpdatedAt { get; private set; }
