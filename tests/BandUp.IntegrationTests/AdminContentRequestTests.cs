@@ -25,6 +25,7 @@ public sealed class AdminContentRequestTests
     [InlineData("/api/admin/users")]
     [InlineData("/api/admin/dashboard")]
     [InlineData("/api/admin/writing-prompts")]
+    [InlineData("/api/admin/lesson-mappings")]
     public async Task Admin_Lists_Reject_Anonymous_And_Ordinary_Users(string path)
     {
         await using AuthorizationApiFactory factory = new();
