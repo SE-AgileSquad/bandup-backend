@@ -13,7 +13,7 @@ public sealed class EmailDeliveryWorker(
         {
             if (pending.ExpiresAt is { } expires && timeProvider.GetUtcNow() >= expires)
             {
-                logger.LogWarning("An expired recovery email was discarded before delivery");
+                logger.LogWarning("An expired email was discarded before delivery");
                 continue;
             }
             try

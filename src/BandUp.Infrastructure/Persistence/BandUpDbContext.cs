@@ -21,6 +21,7 @@ public sealed class BandUpDbContext(DbContextOptions<BandUpDbContext> options, T
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public DbSet<PasswordResetChallenge> PasswordResetChallenges => Set<PasswordResetChallenge>();
+    public DbSet<OtpLoginChallenge> OtpLoginChallenges => Set<OtpLoginChallenge>();
 
     public DbSet<CreditAccount> CreditAccounts => Set<CreditAccount>();
 

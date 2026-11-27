@@ -113,3 +113,50 @@ were used; live delivery is explicitly unverified until the developer completes 
 Use [local setup](auth-local-setup.md) for the Swagger walkthrough and
 [the client contract](auth-client-contract.md) for request coordination and recovery.
 Unrelated review fixes remain listed in [implementation status](implementation-status.md).
+
+## Email OTP login acceptance
+
+`OtpLoginContractTests`, `OtpLoginChallengeTests`, `OtpLoginCodeProtectorTests`,
+`OtpLoginRateLimiterTests`, `OtpLoginHandlerTests` and `RequestOtpLoginTimingTests` cover
+validation, lifetime/guess boundaries, purpose and identity binding, key validation, opaque
+quota identities, CAPTCHA/IP forwarding, generic outcomes, session issuance and timing.
+
+`OtpLoginStoreTests`, `OtpLoginQuotaTests` and `OtpLoginHttpTests` use disposable PostgreSQL,
+Redis and the in-memory inbox. They cover:
+
+- Request, delivered code, verification, `/me`, refresh and logout over HTTP, including
+  secure/custom cookie settings and preservation of signup credit state.
+- Generic unknown/inactive/closed-code responses, committed wrong guesses, replay prevention
+  and exactly one new session from concurrent verification.
+- Case-insensitive lookup, user-row locking, stale-state refresh, unique-index enforcement,
+  `xmin` conflict handling and transactional replacement/invalidation.
+- Atomic Redis IP/email quotas across instances, cooldowns, independent resend/verification
+  budgets and separation from password-reset quotas, even with equal configured keys.
+- Save/commit rollback without delivery or session cookies, provider failures, quota failures,
+  CSRF, OpenAPI and sanitized startup validation. The Worker starts without either OTP key.
+- Password reset invalidation before verification and concurrent reset/login revocation.
+
+The email transport is the existing adapter selected by `Email:Provider`; Resend transport
+coverage remains in `ResendEmailSenderTests` and `ResendRecoveryTests`. No test uses developer
+secrets or sends to a real inbox. Live Resend acceptance remains the manual Swagger step in
+[the setup guide](auth-local-setup.md#8-sign-in-with-an-email-otp). Delivery remains in-process
+and best-effort; `202` is not a delivery receipt. Deployment wiring and production acceptance
+remain separate from the backend implementation and local tests.
+
+Verification on 2026-11-26: `dotnet build -c Release --no-restore` succeeded with zero
+warnings/errors; `dotnet test -c Release --no-build` passed **828 tests**, zero failed/skipped.
+The generated OTP migration matched the model (`dotnet ef migrations has-pending-model-changes`).
+Docker Desktop 28.3.2 supplied disposable dependencies; tests ran outside the Windows sandbox.
+
+Local startup acceptance on 2026-11-26 also ran the exact command
+`dotnet run --project src/BandUp.Api --launch-profile http` with the developer's configuration.
+The missing OTP protection key was generated once in API user secrets and Redis quotas were
+selected, preserving existing credentials. The migration command reported the local database
+already up to date. The API listened on port 8080; `/live`, `/ready`, `/health`, Swagger UI and
+the OpenAPI document returned `200`, with all three dependencies healthy. Both OTP routes
+were present. Anonymous probes confirmed generic `202`, CAPTCHA `422`, malformed-code `400`
+and invalid-code `401 INVALID_OTP_LOGIN_CODE` responses. No real email was sent and no account
+was created or changed. Live inbox delivery remains a separate manual check.
+After the local configuration fix, the full Release suite was rerun: **828 passed**, zero
+failed/skipped, in 6 minutes. The verification API instance was stopped and port 8080 was
+confirmed free for the developer's terminal.

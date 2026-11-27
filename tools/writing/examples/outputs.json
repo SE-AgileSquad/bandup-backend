@@ -1,0 +1,6 @@
+[
+  {
+    "id": "synthetic-1",
+    "output": "{\"summary\":\"Develop the claim with a concrete example.\",\"criteria\":{\"tr\":{\"score\":6,\"explanation\":\"The position is explicit.\",\"strengths\":[],\"areasForImprovement\":[],\"recommendations\":[\"Explain how bus frequency changes travel choices.\"]},\"cc\":{\"score\":6.5,\"explanation\":\"The same claim is repeated.\",\"strengths\":[],\"areasForImprovement\":[],\"recommendations\":[\"Develop a second paragraph with an example.\"]},\"lr\":{\"score\":6,\"explanation\":\"Transport vocabulary fits the topic.\",\"strengths\":[],\"areasForImprovement\":[],\"recommendations\":[\"Describe a specific transport service.\"]},\"gra\":{\"score\":6.5,\"explanation\":\"The sentence uses correct agreement.\",\"strengths\":[],\"areasForImprovement\":[],\"recommendations\":[\"Use a conditional clause to develop the claim.\"]}}}"
+  }
+]
