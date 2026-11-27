@@ -8,6 +8,7 @@ using BandUp.Application.Features.Exams;
 using BandUp.Application.Features.Identity;
 using BandUp.Application.Features.Learning;
 using BandUp.Application.Features.Reading;
+using BandUp.Application.Features.Writing.Admin;
 using BandUp.Infrastructure.Caching;
 using BandUp.Infrastructure.Email;
 using BandUp.Infrastructure.Configuration;
@@ -188,6 +189,7 @@ public static class DependencyInjection
         services.AddScoped<IVocabularyStore, EfVocabularyStore>();
         services.AddScoped<IAdminPassageStore, EfAdminPassageStore>();
         services.AddScoped<IAdminLessonStore, EfAdminLessonStore>();
+        services.AddScoped<IAdminWritingPromptStore, EfAdminWritingPromptStore>();
         services.AddScoped<IAdminDashboardQueries, AdminDashboardQueries>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
         services.AddScoped<IPasswordResetChallengeStore, EfPasswordResetChallengeStore>();

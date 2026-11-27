@@ -6,6 +6,7 @@ using BandUp.Domain.Vocabulary;
 using BandUp.Infrastructure.Persistence.Conventions;
 using Microsoft.EntityFrameworkCore;
 using BandUp.Domain.Exams;
+using BandUp.Domain.Writing;
 
 namespace BandUp.Infrastructure.Persistence;
 
@@ -50,6 +51,8 @@ public sealed class BandUpDbContext(DbContextOptions<BandUpDbContext> options, T
     public DbSet<Attempt> Attempts => Set<Attempt>();
 
     public DbSet<AttemptAnswer> AttemptAnswers => Set<AttemptAnswer>();
+
+    public DbSet<WritingPrompt> WritingPrompts => Set<WritingPrompt>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {

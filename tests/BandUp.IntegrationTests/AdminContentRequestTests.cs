@@ -24,6 +24,7 @@ public sealed class AdminContentRequestTests
     [InlineData("/api/admin/lessons")]
     [InlineData("/api/admin/users")]
     [InlineData("/api/admin/dashboard")]
+    [InlineData("/api/admin/writing-prompts")]
     public async Task Admin_Lists_Reject_Anonymous_And_Ordinary_Users(string path)
     {
         await using AuthorizationApiFactory factory = new();
@@ -189,6 +190,9 @@ public sealed class AdminContentRequestTests
     [InlineData("lessons", "search=")]
     [InlineData("lessons", "questionType=Unknown")]
     [InlineData("lessons", "questionType=999")]
+    [InlineData("writing-prompts", "status=Unknown")]
+    [InlineData("writing-prompts", "status=999")]
+    [InlineData("writing-prompts", "search=")]
     public async Task Invalid_Content_Filters_Are_Rejected_Before_Reading_The_Database(string resource, string filter)
     {
         Guid actorId = Guid.CreateVersion7();
@@ -245,6 +249,64 @@ public sealed class AdminContentRequestTests
         request.Headers.Add("X-Requested-With", "bandup");
         using HttpResponseMessage denied = await client.SendAsync(request);
         denied.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Theory]
+    [InlineData("POST", "")]
+    [InlineData("PUT", "/01998a61-7ca4-7c0b-8051-9ee86f71afab")]
+    [InlineData("DELETE", "/01998a61-7ca4-7c0b-8051-9ee86f71afab")]
+    [InlineData("POST", "/01998a61-7ca4-7c0b-8051-9ee86f71afab/publish")]
+    [InlineData("POST", "/01998a61-7ca4-7c0b-8051-9ee86f71afab/archive")]
+    [InlineData("POST", "/01998a61-7ca4-7c0b-8051-9ee86f71afab/duplicate")]
+    [InlineData("GET", "/01998a61-7ca4-7c0b-8051-9ee86f71afab")]
+    public async Task Writing_Prompt_Actions_Require_Admin_Permissions(string method, string suffix)
+    {
+        await using AuthorizationApiFactory factory = new();
+        using HttpClient client = factory.CreateClient();
+        string path = "/api/admin/writing-prompts" + suffix;
+        using HttpRequestMessage anonymousRequest = new(new HttpMethod(method), path);
+        using HttpResponseMessage anonymous = await client.SendAsync(anonymousRequest);
+        anonymous.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        string token = factory.Services.GetRequiredService<ITokenService>()
+            .CreateAccessToken(Guid.CreateVersion7(), "User", TimeProvider.System.GetUtcNow()).Value;
+        using HttpRequestMessage request = new(new HttpMethod(method), path);
+        request.Headers.Add("Cookie", $"bu_at={token}");
+        request.Headers.Add("X-Requested-With", "bandup");
+        using HttpResponseMessage denied = await client.SendAsync(request);
+        denied.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Theory]
+    [InlineData("title", 100, 350)]
+    [InlineData("taskText", 100, 350)]
+    [InlineData("essayType", 100, 350)]
+    [InlineData("minWords", 0, 350)]
+    [InlineData("maxWords", 100, 99)]
+    public async Task Writing_Prompt_Validation_Runs_Before_A_Database_Transaction(string field, int min, int max)
+    {
+        Guid actor = Guid.NewGuid();
+        await using AuthorizationApiFactory factory = new(actor);
+        using HttpClient client = factory.CreateClient();
+        string token = factory.Services.GetRequiredService<ITokenService>()
+            .CreateAccessToken(actor, "Admin", TimeProvider.System.GetUtcNow()).Value;
+        client.DefaultRequestHeaders.Add("Cookie", $"bu_at={token}");
+        client.DefaultRequestHeaders.Add("X-Requested-With", "bandup");
+        foreach (HttpMethod method in new[] { HttpMethod.Post, HttpMethod.Put })
+        {
+            string path = "/api/admin/writing-prompts" + (method == HttpMethod.Put ? $"/{Guid.NewGuid()}" : "");
+            using HttpRequestMessage request = new(method, path)
+            {
+                Content = JsonContent.Create(new
+                {
+                    title = field == "title" ? " " : "Title", taskText = field == "taskText" ? "" : "Text",
+                    essayType = field == "essayType" ? "" : "Opinion essay", minWords = min, maxWords = max,
+                }),
+            };
+            using HttpResponseMessage response = await client.SendAsync(request);
+            response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("errors").TryGetProperty(field, out _).ShouldBeTrue();
+        }
     }
 
     private sealed class AuthorizationApiFactory(
