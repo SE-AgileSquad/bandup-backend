@@ -1,5 +1,6 @@
 using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
+using BandUp.Domain.Common;
 using BandUp.Domain.Learning;
 
 namespace BandUp.Application.Features.Learning.Admin.EditLessonExample;
@@ -17,7 +18,14 @@ public sealed class EditLessonExampleHandler(IAdminLessonStore store)
         }
 
         LessonExampleInput input = command.Input;
-        example.Edit(input.EvidenceSentence, input.Paraphrase, input.SortOrder);
-        return Result<bool>.Success(true);
+        try
+        {
+            lesson!.EditExample(example.Id, input.EvidenceSentence, input.Paraphrase, input.SortOrder);
+            return Result<bool>.Success(true);
+        }
+        catch (DomainException exception)
+        {
+            return Result<bool>.Failure(Error.Conflict(exception.Message));
+        }
     }
 }

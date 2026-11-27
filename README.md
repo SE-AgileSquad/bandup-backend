@@ -39,6 +39,7 @@ Tests live in `tests/`: unit, architecture, and integration (Testcontainers).
 | [docs/admin-users-api.md](docs/admin-users-api.md) | you are connecting the super-admin Users page |
 | [docs/admin-dashboard-api.md](docs/admin-dashboard-api.md) | you are connecting the Admin home counters |
 | [docs/admin-passages-api.md](docs/admin-passages-api.md) | you are connecting the admin Passages list and card actions |
+| [docs/admin-lessons-api.md](docs/admin-lessons-api.md) | you are connecting the admin Lessons list, filters and archive action |
 | [infra/README.md](infra/README.md) | you want to deploy, or change Docker/Nginx/CI/CD |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | you are about to branch, commit, or open a PR |
 
