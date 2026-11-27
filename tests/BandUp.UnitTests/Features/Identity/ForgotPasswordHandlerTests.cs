@@ -17,6 +17,7 @@ public sealed class ForgotPasswordHandlerTests
     private readonly IPasswordResetRateLimiter _limits = Substitute.For<IPasswordResetRateLimiter>();
     private readonly IPasswordResetChallengeStore _store = Substitute.For<IPasswordResetChallengeStore>();
     private readonly IPasswordResetCodeProtector _codes = Substitute.For<IPasswordResetCodeProtector>();
+    private readonly IPasswordResetTokenStore _tokens = Substitute.For<IPasswordResetTokenStore>();
     private readonly IPostCommitEmailQueue _emails = Substitute.For<IPostCommitEmailQueue>();
     private readonly FakeTimeProvider _time = new(Now);
 
@@ -82,6 +83,7 @@ public sealed class ForgotPasswordHandlerTests
         _codes.Received(1).Protect(staged.Id, user.Id, "012345");
         _emails.Received(1).Enqueue(Arg.Is<EmailMessage>(message =>
             message.To == Email && message.TextBody.Contains("012345") && !message.TextBody.Contains(staged.CodeMac)), staged.ExpiresAt);
+        await _tokens.Received(1).InvalidateAllForUserAsync(user.Id, Now, CancellationToken.None);
         user.PasswordHash.ShouldBe("unchanged-password-hash");
     }
 
@@ -125,7 +127,7 @@ public sealed class ForgotPasswordHandlerTests
     }
 
     private Task<Result<ForgotPasswordOutcome>> HandleAsync() =>
-        new ForgotPasswordHandler(_limits, _store, _codes, _emails, _time).HandleAsync(new ForgotPasswordCommand(Email, Ip), CancellationToken.None);
+        new ForgotPasswordHandler(_limits, _store, _codes, _tokens, _emails, _time).HandleAsync(new ForgotPasswordCommand(Email, Ip), CancellationToken.None);
 
     [Fact]
     public async Task AUTH_15_Quota_Outage_Fails_Closed_Before_Account_Lookup_Or_Delivery()

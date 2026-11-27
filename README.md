@@ -151,6 +151,12 @@ For an existing setup, preserve existing keys and generate only missing ones. Em
 uses `POST /api/auth/otp/request` followed by `POST /api/auth/otp/verify`; see
 [the OTP Swagger walkthrough](docs/auth-local-setup.md#8-sign-in-with-an-email-otp).
 
+Password recovery uses `forgot-password` → `verify-reset-code` → `reset-password`. Verification
+returns a reset-only token; submit it with the new password within five minutes. Apply the
+`AddPasswordResetTokens` migration; the existing recovery key is reused with a separate purpose.
+The previous combined email/code/password reset body is no longer accepted. See
+[the current contract](docs/adr/0019-separate-reset-code-verification.md).
+
 The fake provider accepts `fake-captcha-token` on register/login/OTP request. The Worker needs
 none of the three keys. In Development, `Auth:RequireSecureCookies=false`
 permits local HTTP.

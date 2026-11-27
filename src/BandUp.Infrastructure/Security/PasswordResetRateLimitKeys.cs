@@ -22,6 +22,7 @@ public sealed class PasswordResetRateLimitKeys
     }
 
     public string Email(string email) => Hash("email", email.Trim().ToUpperInvariant());
+    public string ResetToken(string tokenHash) => Hash("reset-token", tokenHash);
 
     public string ClientIp(string? clientIp)
     {

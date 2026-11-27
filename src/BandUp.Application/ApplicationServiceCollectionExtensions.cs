@@ -3,6 +3,7 @@ using BandUp.Application.Abstractions;
 using BandUp.Application.Behaviors;
 using BandUp.Application.Features.Identity.ForgotPassword;
 using BandUp.Application.Features.Identity.ResetPassword;
+using BandUp.Application.Features.Identity.VerifyResetCode;
 using BandUp.Application.Features.Identity.RequestOtpLogin;
 using BandUp.Application.Features.Identity.VerifyOtpLogin;
 using FluentValidation;
@@ -20,6 +21,7 @@ public static class ApplicationServiceCollectionExtensions
         RegisterValidators(services, assembly);
         services.AddScoped<IPipelineBehavior<ForgotPasswordCommand, ForgotPasswordOutcome>, ForgotPasswordTimingBehavior>();
         services.AddScoped<IPipelineBehavior<ResetPasswordCommand, ResetPasswordOutcome>, ResetPasswordTimingBehavior>();
+        services.AddScoped<IPipelineBehavior<VerifyResetCodeCommand, VerifyResetCodeOutcome>, VerifyResetCodeTimingBehavior>();
         services.AddScoped<IPipelineBehavior<RequestOtpLoginCommand, RequestOtpLoginOutcome>, RequestOtpLoginTimingBehavior>();
         services.AddScoped<IPipelineBehavior<VerifyOtpLoginCommand, VerifyOtpLoginOutcome>, VerifyOtpLoginTimingBehavior>();
         services.AddPipelineBehaviors();

@@ -18,7 +18,8 @@ Names can be configured, so clients should treat the cookies as browser-managed 
 | `POST /api/auth/refresh` | Refresh cookie; access cookie may be missing, expired or blacklisted | Empty `200`, replacement cookies | `401 INVALID_REFRESH_TOKEN`, both cookies deleted |
 | `POST /api/auth/logout` | Valid access cookie; optional presented refresh cookie | Empty `204`, both cookies deleted | `401 UNAUTHORIZED`, no cookie deletion |
 | `POST /api/auth/forgot-password` | Email JSON; anonymous, no CAPTCHA required | `202`, generic acknowledgement; no cookie changes | `400` validation; client-IP-wide `429` |
-| `POST /api/auth/reset-password` | Email, six-digit code string and new password JSON; anonymous | Empty `204`, both cookies deleted; no automatic login | Generic `422 INVALID_PASSWORD_RESET_CODE`; `400` validation; client-IP-wide `429`; cookies preserved |
+| `POST /api/auth/verify-reset-code` | Email and six-digit code string JSON; anonymous | `200 { resetToken, expiresAt }`; no cookie changes | Generic `422 INVALID_PASSWORD_RESET_CODE`; `400` validation; client-IP-wide `429` |
+| `POST /api/auth/reset-password` | Reset token and new password JSON; anonymous | Empty `204`, both cookies deleted; no automatic login | Generic `422 INVALID_PASSWORD_RESET_TOKEN`; `400` validation; client-IP-wide `429`; cookies preserved |
 
 Refresh and logout accept an empty JSON object. Credentials supplied in JSON or the query
 string are not used. The API does not accept bearer headers as a replacement for the access
@@ -84,9 +85,17 @@ blacklist every access JWT already issued to those devices.
 
 ## Password recovery
 
-Request the code and submit it as a string with the account email and new password. Show the
-same acknowledgement for every `202`; do not infer account existence or delivery success.
-Map `422 INVALID_PASSWORD_RESET_CODE` to the recovery form without triggering session refresh.
+Request the code and submit it as a string with the account email to `verify-reset-code`.
+Keep the returned `resetToken` in memory, then send it and `newPassword` to `reset-password`.
+The token expires after five minutes and is consumed only by a successful reset. Verification
+consumes the emailed code but does not sign in, change the password or revoke sessions.
+An admitted resend invalidates previous reset tokens; a suppressed resend preserves them.
+Do not put the token in URLs or persistent browser storage. Discard it on reset, expiry or
+restart of the recovery flow. If the verification response or token is lost, request a new
+code after cooldown. This replaces the former combined email/code/password body.
+Show the same acknowledgement for every `202`; do not infer account existence or delivery success.
+Map `422 INVALID_PASSWORD_RESET_CODE` to code entry and `422 INVALID_PASSWORD_RESET_TOKEN`
+to recovery restart without triggering session refresh.
 Malformed input uses `400`, and client-IP throttling uses `429`.
 
 After a successful reset, clear client-side user/profile state and require normal login.
@@ -98,7 +107,8 @@ only on successful commit. Rejected reset requests and infrastructure errors pre
 Recovery does not require CAPTCHA or an authenticated session. The existing CSRF guard still
 applies whenever either session cookie is sent. See [local setup](auth-local-setup.md#6-test-forgotten-password-recovery-with-a-local-inbox)
 for the Swagger/Mailpit walkthrough and [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md)
-for code lifetime, attempt/resend limits, delivery guarantees and access-token policy.
+for the original policy. [ADR 0019](adr/0019-separate-reset-code-verification.md) defines the
+current three-step contract, reset-token lifetime and transaction guarantees.
 
 ## Email OTP sign-in
 

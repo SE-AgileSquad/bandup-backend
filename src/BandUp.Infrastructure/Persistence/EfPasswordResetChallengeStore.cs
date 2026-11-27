@@ -68,6 +68,15 @@ public sealed class EfPasswordResetChallengeStore(BandUpDbContext context) : IPa
         }
     }
 
+    public async Task InvalidateAllForUserAsync(Guid userId, DateTimeOffset invalidatedAt, CancellationToken cancellationToken)
+    {
+        RequireTransaction();
+        if (await LockUserAsync(userId, cancellationToken))
+        {
+            await InvalidateOpenAsync(userId, null, invalidatedAt, cancellationToken);
+        }
+    }
+
     private async Task InvalidateOpenAsync(
         Guid userId, Guid? excludedId, DateTimeOffset at, CancellationToken cancellationToken)
     {

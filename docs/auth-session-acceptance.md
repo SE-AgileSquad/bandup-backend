@@ -160,3 +160,31 @@ was created or changed. Live inbox delivery remains a separate manual check.
 After the local configuration fix, the full Release suite was rerun: **828 passed**, zero
 failed/skipped, in 6 minutes. The verification API instance was stopped and port 8080 was
 confirmed free for the developer's terminal.
+
+
+## Separate reset-code verification acceptance
+
+Verification on 2026-11-27: Release build passed with zero warnings/errors and the full
+`dotnet test -c Release --no-build` run passed **918 tests**, zero failed/skipped, in
+15 minutes 15 seconds. `dotnet ef migrations has-pending-model-changes` reported no model
+changes. No package or new secret is required; reset-token protection reuses the recovery
+key with a distinct purpose.
+
+`PasswordResetVerificationTests`, `PasswordResetTokenStoreTests`, `PasswordResetTokenTests`
+and `VerifyResetCodeHandlerTests` cover verification without password/session changes,
+no-store credential responses, one grant from concurrent verification, one password change
+from concurrent reset, expiry/closed-state rejection, save/commit rollback and retry,
+resend invalidation, password validation without token consumption, challenge supersession,
+stale-state refresh and xmin. Existing Mailpit, offline Resend, OTP-login/reset races,
+refresh revocation, cookie, quota, validation, CSRF and OpenAPI acceptance use the new flow.
+
+The new additive migration was applied to the local developer database. A separate local API
+on port 18080 started with existing user secrets. Readiness, health and Swagger returned 200;
+the OpenAPI schemas expose email/code for verification and resetToken/newPassword for reset.
+Safe anonymous probes verified generic 202, invalid-code 422, invalid-token 422 and old-body
+400 responses. An initial PostgreSQL readiness timeout cleared on recheck without a setting
+change. No real account was created/reset and no real email was sent. Live Resend inbox and
+frontend acceptance remain manual. The temporary API instance was stopped after verification.
+
+See [ADR 0019](adr/0019-separate-reset-code-verification.md) and the updated local setup guide
+for the current contract. The former combined email/code/password reset request is rejected.

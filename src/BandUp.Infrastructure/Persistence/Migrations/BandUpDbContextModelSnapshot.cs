@@ -538,6 +538,79 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("BandUp.Domain.Identity.PasswordResetToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ChallengeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("challenge_id");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTimeOffset?>("InvalidatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("invalidated_at");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_password_reset_tokens");
+
+                    b.HasIndex("ChallengeId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_password_reset_tokens_challenge_id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_password_reset_tokens_token_hash");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_password_reset_token_open_user")
+                        .HasFilter("consumed_at IS NULL AND invalidated_at IS NULL");
+
+                    b.ToTable("password_reset_tokens", "identity", t =>
+                        {
+                            t.HasCheckConstraint("password_reset_token_consumption_check", "consumed_at IS NULL OR (consumed_at >= created_at AND consumed_at < expires_at)");
+
+                            t.HasCheckConstraint("password_reset_token_hash_check", "token_hash ~ '^[0-9a-f]{64}$'");
+
+                            t.HasCheckConstraint("password_reset_token_invalidation_check", "invalidated_at IS NULL OR invalidated_at >= created_at");
+
+                            t.HasCheckConstraint("password_reset_token_terminal_check", "consumed_at IS NULL OR invalidated_at IS NULL");
+
+                            t.HasCheckConstraint("password_reset_token_times_check", "expires_at > created_at");
+                        });
+                });
+
             modelBuilder.Entity("BandUp.Domain.Identity.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1040,6 +1113,23 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_password_reset_challenges_users_user_id");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Identity.PasswordResetToken", b =>
+                {
+                    b.HasOne("BandUp.Domain.Identity.PasswordResetChallenge", null)
+                        .WithMany()
+                        .HasForeignKey("ChallengeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_password_reset_tokens_password_reset_challenges_challenge_id");
+
+                    b.HasOne("BandUp.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_password_reset_tokens_users_user_id");
                 });
 
             modelBuilder.Entity("BandUp.Domain.Identity.RefreshToken", b =>

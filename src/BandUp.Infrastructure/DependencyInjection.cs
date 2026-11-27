@@ -91,6 +91,7 @@ public static class DependencyInjection
         // The API opts into startup validation. Other hosts do not require a recovery key
         // unless they resolve recovery services.
         services.AddSingleton<IPasswordResetCodeProtector, PasswordResetCodeProtector>();
+        services.AddSingleton<IPasswordResetTokenProtector, PasswordResetTokenProtector>();
         services.AddSingleton<PasswordResetRateLimitKeys>();
         services.AddSingleton<IPasswordResetRateLimiter>(provider =>
             string.Equals(provider.GetRequiredService<IOptions<PasswordResetSettings>>().Value.RateLimitProvider,
@@ -188,6 +189,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminLessonStore, EfAdminLessonStore>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
         services.AddScoped<IPasswordResetChallengeStore, EfPasswordResetChallengeStore>();
+        services.AddScoped<IPasswordResetTokenStore, EfPasswordResetTokenStore>();
         services.AddScoped<IOtpLoginChallengeStore, EfOtpLoginChallengeStore>();
         services.AddScoped<ICreditAccountRepository, EfCreditAccountRepository>();
         services.AddScoped<ICreditLedgerRepository, EfCreditLedgerRepository>();

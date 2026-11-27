@@ -83,4 +83,22 @@ public sealed class PasswordResetQuotaTests(BandUpTestEnvironment environment)
     }
 
     private static string NewIp() => new IPAddress(Guid.CreateVersion7().ToByteArray()).ToString();
+
+    [Fact]
+    public async Task AUTH_17_Redis_Reset_Token_Budget_Is_Atomic_And_Separate_From_Code_Verification()
+    {
+        using ConnectionMultiplexer connection = await ConnectionMultiplexer.ConnectAsync(environment.RedisConnectionString);
+        var first = new RedisPasswordResetRateLimiter(connection, NewKeys());
+        var second = new RedisPasswordResetRateLimiter(connection, NewKeys());
+        string hash = Guid.CreateVersion7().ToString("N");
+        var decisions = await Task.WhenAll(Enumerable.Range(0, 40).Select(index =>
+            (index % 2 == 0 ? first : second).AcquireResetAsync(hash, NewIp(), CancellationToken.None)));
+        decisions.Count(decision => decision == PasswordResetRateLimitDecision.Allowed).ShouldBe(20);
+        decisions.Count(decision => decision == PasswordResetRateLimitDecision.AccountSuppressed).ShouldBe(20);
+        string ip = NewIp();
+        var ipDecisions = await Task.WhenAll(Enumerable.Range(0, 120).Select(_ => first.AcquireResetAsync(Guid.CreateVersion7().ToString("N"), ip, CancellationToken.None)));
+        ipDecisions.Count(decision => decision == PasswordResetRateLimitDecision.Allowed).ShouldBe(100);
+        ipDecisions.Count(decision => decision == PasswordResetRateLimitDecision.ClientRateLimited).ShouldBe(20);
+        (await first.AcquireVerificationAsync(hash, ip, CancellationToken.None)).ShouldBe(PasswordResetRateLimitDecision.Allowed);
+    }
 }

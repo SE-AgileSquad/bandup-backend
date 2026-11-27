@@ -9,6 +9,7 @@ using BandUp.Application.Features.Identity.Logout;
 using BandUp.Application.Features.Identity.Refresh;
 using BandUp.Application.Features.Identity.Register;
 using BandUp.Application.Features.Identity.ResetPassword;
+using BandUp.Application.Features.Identity.VerifyResetCode;
 using BandUp.Application.Features.Identity.RequestOtpLogin;
 using BandUp.Application.Features.Identity.VerifyOtpLogin;
 using Microsoft.AspNetCore.Http;
@@ -107,12 +108,25 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
+        endpoints.MapPost("/verify-reset-code", VerifyResetCodeAsync)
+            .WithName("Auth_VerifyResetCode")
+            .AllowAnonymous()
+            .Accepts<VerifyResetCodeRequest>("application/json")
+            .WithSummary("Verify a password-reset code and obtain a reset-only token.")
+            .WithDescription("Anonymous. Send email and a six-digit code as a string. Success consumes the code and returns a single-use resetToken valid for five minutes, without signing in or changing cookies. If session cookies are present, send X-Requested-With: bandup. Invalid codes share INVALID_PASSWORD_RESET_CODE (422).")
+            .Produces<VerifyResetCodeResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status415UnsupportedMediaType)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
         endpoints.MapPost("/reset-password", ResetPasswordAsync)
             .WithName("Auth_ResetPassword")
             .AllowAnonymous()
             .Accepts<ResetPasswordRequest>("application/json")
-            .WithSummary("Reset a password using an email code.")
-            .WithDescription("Anonymous. Send email, a six-digit code as a string (preserve leading zeroes), and newPassword. If session cookies are present, send X-Requested-With: bandup. Success clears this browser's session cookies after commit; sign in normally afterward. Invalid, expired and exhausted codes share one 422 response. Existing access tokens on other devices keep their normal expiry.")
+            .WithSummary("Reset a password using the token from verify-reset-code.")
+            .WithDescription("Anonymous. Send resetToken and newPassword. If session cookies are present, send X-Requested-With: bandup. Success consumes the token and clears this browser's session cookies after commit; sign in normally afterward. Invalid, expired and reused tokens share INVALID_PASSWORD_RESET_TOKEN (422). Existing access tokens on other devices keep their normal expiry.")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status415UnsupportedMediaType)
@@ -295,13 +309,29 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
             : result.ToProblem(httpContext);
     }
 
+    private static async Task<IResult> VerifyResetCodeAsync(
+        VerifyResetCodeRequest request, IDispatcher dispatcher, HttpContext httpContext, CancellationToken cancellationToken)
+    {
+        httpContext.Response.Headers.CacheControl = "no-store";
+        httpContext.Response.Headers.Pragma = "no-cache";
+        VerifyResetCodeCommand command = new(request.Email, request.Code, httpContext.Connection.RemoteIpAddress?.ToString());
+        Result<VerifyResetCodeOutcome> result = await dispatcher.SendAsync<VerifyResetCodeCommand, VerifyResetCodeOutcome>(command, cancellationToken);
+        if (result.IsFailure) { return result.ToProblem(httpContext); }
+        return result.Value switch
+        {
+            VerifyResetCodeOutcome.Verified verified => TypedResults.Ok(new VerifyResetCodeResponse(verified.ResetToken, verified.ExpiresAt)),
+            VerifyResetCodeOutcome.Rejected => Error.InvalidPasswordReset().ToProblem(httpContext),
+            _ => throw new InvalidOperationException("Unknown reset-code verification outcome."),
+        };
+    }
+
     private async Task<IResult> ResetPasswordAsync(
         ResetPasswordRequest request,
         IDispatcher dispatcher,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        ResetPasswordCommand command = new(request.Email, request.Code, request.NewPassword,
+        ResetPasswordCommand command = new(request.ResetToken, request.NewPassword,
             httpContext.Connection.RemoteIpAddress?.ToString());
         Result<ResetPasswordOutcome> result = await dispatcher.SendAsync<ResetPasswordCommand, ResetPasswordOutcome>(command, cancellationToken);
         if (result.IsFailure)
@@ -315,7 +345,7 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
                 cookieService.ClearSessionCookies(httpContext.Response.Cookies);
                 return TypedResults.NoContent();
             case ResetPasswordOutcome.Rejected:
-                return Error.InvalidPasswordReset().ToProblem(httpContext);
+                return Error.InvalidPasswordResetToken().ToProblem(httpContext);
             default:
                 throw new InvalidOperationException("Unknown password-reset outcome.");
         }
@@ -326,7 +356,9 @@ public sealed class AuthEndpoints(AuthCookieService cookieService) : IEndpointGr
     public sealed record RequestOtpLoginRequest(string Email, string? CaptchaToken);
     public sealed record VerifyOtpLoginRequest(string Email, string Code);
     public sealed record ForgotPasswordRequest(string Email);
-    public sealed record ResetPasswordRequest(string Email, string Code, string NewPassword);
+    public sealed record VerifyResetCodeRequest(string Email, string Code);
+    public sealed record VerifyResetCodeResponse(string ResetToken, DateTimeOffset ExpiresAt);
+    public sealed record ResetPasswordRequest(string ResetToken, string NewPassword);
     public sealed record SessionRequest;
     public sealed record UserDto(Guid Id, string Email, string DisplayName, string Role, int CreditBalance);
 }
