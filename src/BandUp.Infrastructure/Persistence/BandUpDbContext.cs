@@ -7,6 +7,7 @@ using BandUp.Infrastructure.Persistence.Conventions;
 using Microsoft.EntityFrameworkCore;
 using BandUp.Domain.Exams;
 using BandUp.Domain.Writing;
+using BandUp.Domain.Media;
 
 namespace BandUp.Infrastructure.Persistence;
 
@@ -53,6 +54,7 @@ public sealed class BandUpDbContext(DbContextOptions<BandUpDbContext> options, T
     public DbSet<AttemptAnswer> AttemptAnswers => Set<AttemptAnswer>();
 
     public DbSet<WritingPrompt> WritingPrompts => Set<WritingPrompt>();
+    public DbSet<MediaImage> MediaImages => Set<MediaImage>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {

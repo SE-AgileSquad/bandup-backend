@@ -2,6 +2,7 @@ using BandUp.Application.Common;
 using BandUp.Application.Features.Writing.Admin;
 using BandUp.Domain.Writing;
 using Microsoft.EntityFrameworkCore;
+using BandUp.Application.Features.Media.Admin;
 
 namespace BandUp.Infrastructure.Persistence;
 
@@ -21,7 +22,10 @@ public sealed class EfAdminWritingPromptStore(BandUpDbContext context) : IAdminW
         context.WritingPrompts.AsNoTracking().Where(prompt => prompt.Id == id)
             .Select(prompt => new WritingPromptDetails(prompt.Id, prompt.Title, prompt.TaskText, prompt.EssayType,
                 prompt.MinWords, prompt.MaxWords, prompt.Status, prompt.CreatedBy,
-                prompt.CreatedAt, prompt.UpdatedAt, prompt.PublishedAt, prompt.DurationMinutes)).SingleOrDefaultAsync(cancellationToken);
+                prompt.CreatedAt, prompt.UpdatedAt, prompt.PublishedAt, prompt.DurationMinutes,
+                context.MediaImages.Where(image => image.Id == prompt.PhotoId)
+                    .Select(image => new PhotoDetails(image.Id, "/api/admin/writing-prompts/" + prompt.Id + "/photo", image.ContentType, image.SizeBytes))
+                    .SingleOrDefault())).SingleOrDefaultAsync(cancellationToken);
 
     public Task<PagedResult<WritingPromptSummary>> ListAsync(
         PageRequest page, WritingPromptStatus? status, string? search, CancellationToken cancellationToken)
@@ -41,7 +45,10 @@ public sealed class EfAdminWritingPromptStore(BandUpDbContext context) : IAdminW
         return EfStoreOperations.ReadPageAsync(prompts.OrderByDescending(prompt => prompt.UpdatedAt)
             .ThenBy(prompt => prompt.Title).ThenBy(prompt => prompt.Id)
             .Select(prompt => new WritingPromptSummary(prompt.Id, prompt.Title, prompt.EssayType,
-                prompt.MinWords, prompt.MaxWords, prompt.Status, prompt.UpdatedAt, prompt.DurationMinutes)), page, cancellationToken);
+                prompt.MinWords, prompt.MaxWords, prompt.Status, prompt.UpdatedAt, prompt.DurationMinutes,
+                context.MediaImages.Where(image => image.Id == prompt.PhotoId)
+                    .Select(image => new PhotoDetails(image.Id, "/api/admin/writing-prompts/" + prompt.Id + "/photo", image.ContentType, image.SizeBytes))
+                    .SingleOrDefault())), page, cancellationToken);
     }
 
     public Task<bool> TryDeleteAsync(Guid id, CancellationToken cancellationToken) =>

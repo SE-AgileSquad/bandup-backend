@@ -4,6 +4,7 @@ Scope: manage the Task 2 prompts shown in the admin Writing Prompts page. All ro
 an active Admin or SuperAdmin, checked against the current database role. Anonymous or
 inactive accounts receive 401; ordinary users receive 403. Mutations require the existing
 `X-Requested-With: bandup` header and JSON content type. Use `{}` for bodyless actions.
+Photo uploads are the scoped multipart exception; see [content photos](admin-content-photos-api.md).
 
 ## List and card actions
 
@@ -15,7 +16,7 @@ inactive accounts receive 401; ordinary users receive 403. Mutations require the
 - Filters combine with AND before counting/paging. Invalid filters return 400. An out-of-range
   page returns empty items with the filtered totalCount. Order: updatedAt descending, title, ID.
 - Returns `{ items, page, pageSize, totalCount }`. Each item has id, title, essayType, minWords,
-  maxWords, durationMinutes, status, updatedAt and taskNumber (always 2). The list omits taskText.
+  maxWords, durationMinutes, status, updatedAt, photo and taskNumber (always 2). The list omits taskText.
 - Draft cards use Edit draft, other cards View details; both load the same detail GET route.
   The illustration is frontend presentation.
 
@@ -66,6 +67,8 @@ Three prompts is the FS content-delivery target, not a database or API limit; no
 are automatically inserted into the development database.
 
 Details additionally include taskText, createdBy, createdAt, publishedAt and isReadOnly.
+Both lists and details return `photo: null` or `{ id, url, contentType, sizeBytes }`.
+Photo upload/replacement and removal use separate `/photo` routes, not the JSON editor.
 Both list and detail responses include durationMinutes. It is a positive integer number of
 minutes and is editable on Draft only. Omitted/null on POST uses 40 minutes; omitted/null on
 PUT preserves the saved duration. Zero, negative, fractional and nonnumeric input returns

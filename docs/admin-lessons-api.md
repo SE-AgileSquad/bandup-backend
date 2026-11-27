@@ -4,6 +4,14 @@ All routes require an active `Admin` or `SuperAdmin`. Anonymous/invalid/inactive
 receive 401; ordinary active users receive 403. The existing live database permission checks,
 cookies and CSRF protection apply.
 
+Lessons support one optional photo through `POST`, `GET` and `DELETE
+/api/admin/lessons/{lessonId}/photo`. Upload uses multipart field `file` and
+`X-Requested-With: bandup`. Upload/replacement and removal are allowed on Draft and Published;
+Archived is read-only. Both lists and details include `photo: null` or
+`{ id, url, contentType, sizeBytes }`. Normal JSON create/edit keeps its existing contract;
+upload the photo after creating the Lesson. See [content photos](admin-content-photos-api.md)
+for formats, limits, Cloudinary configuration, cleanup and migration instructions.
+
 ## Lesson list — `Admin_ListLessons`
 
 `GET /api/admin/lessons?page=1&pageSize=4&status=Draft&search=given&questionType=TrueFalseNotGiven`
@@ -31,7 +39,8 @@ title, then ID for a stable result. The same ordering applies to all status tabs
       "sortOrder": 1,
       "status": "Draft",
       "exampleCount": 2,
-      "hasPractice": true
+      "hasPractice": true,
+      "photo": null
     }
   ],
   "page": 1,

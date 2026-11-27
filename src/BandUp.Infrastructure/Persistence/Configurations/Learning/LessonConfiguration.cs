@@ -15,6 +15,8 @@ internal sealed class LessonConfiguration : IEntityTypeConfiguration<Lesson>
         builder.ToTable("lessons", Schema);
         builder.HasKey(lesson => lesson.Id);
         builder.Property(lesson => lesson.Id).ValueGeneratedNever();
+        builder.HasOne<BandUp.Domain.Media.MediaImage>().WithMany().HasForeignKey(lesson => lesson.PhotoId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.Property(lesson => lesson.Title).IsRequired();
         builder.Property(lesson => lesson.Body).IsRequired();

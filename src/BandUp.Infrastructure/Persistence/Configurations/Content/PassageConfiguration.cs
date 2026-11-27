@@ -17,6 +17,8 @@ internal sealed class PassageConfiguration : IEntityTypeConfiguration<Passage>
         builder.Property(passage => passage.DurationMinutes).HasDefaultValue(Passage.DefaultDurationMinutes);
         builder.HasKey(passage => passage.Id);
         builder.Property(passage => passage.Id).ValueGeneratedNever();
+        builder.HasOne<BandUp.Domain.Media.MediaImage>().WithMany().HasForeignKey(passage => passage.PhotoId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.Property(passage => passage.Title).IsRequired();
         builder.Property(passage => passage.Body).IsRequired();

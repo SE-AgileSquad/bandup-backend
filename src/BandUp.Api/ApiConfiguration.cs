@@ -191,6 +191,10 @@ public static class ApiConfiguration
                                     headers['X-Requested-With'] = 'bandup';
                                     request.headers = headers;
                                 }
+                                else if (contentType && String(contentType[1]).toLowerCase().startsWith('multipart/form-data')) {
+                                    headers['X-Requested-With'] = 'bandup';
+                                    request.headers = headers;
+                                }
                             }
                             return request;
                         }

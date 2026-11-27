@@ -3,13 +3,16 @@ using BandUp.Application.Common;
 using BandUp.Infrastructure.Configuration;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using BandUp.Api.Endpoints.Admin;
+using BandUp.Application.Features.Media.Admin;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace BandUp.Api.Middleware;
 
 /// <summary>
 /// SameSite=Strict cookies keep most cross-site submissions out; this is the second layer.
-/// A state-changing request that carries a session must also declare a JSON body and the custom
-/// header, which a plain HTML form on another origin cannot send.
+/// A state-changing request that carries a session must also declare JSON (or multipart on
+/// photo upload endpoints) and the custom header, which a plain cross-origin HTML form cannot send.
 /// </summary>
 /// <remarks>
 /// Requests with no session cookie are not guarded: there is no ambient credential to forge,
@@ -26,7 +29,25 @@ public sealed class CsrfMiddleware(RequestDelegate next, IOptions<AuthSettings> 
 
     public async Task InvokeAsync(HttpContext httpContext)
     {
-        if (IsSafe(httpContext.Request.Method) || !HasSession(httpContext) || IsAcceptable(httpContext.Request))
+        bool photoUpload = httpContext.GetEndpoint()?.Metadata.GetMetadata<PhotoUploadMetadata>() is not null;
+        if (photoUpload)
+        {
+            if (httpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+            {
+                limit.MaxRequestBodySize = ImageFileInfo.MaxRequestBytes;
+            }
+            if (httpContext.Request.ContentLength > ImageFileInfo.MaxRequestBytes)
+            {
+                var tooLarge = ProblemDetailsFactory.ForError(Error.Validation(new Dictionary<string, string[]>
+                    { ["file"] = ["The photo request exceeds the size limit."] }), httpContext);
+                tooLarge.Status = StatusCodes.Status413PayloadTooLarge;
+                tooLarge.Title = "Payload Too Large";
+                httpContext.Response.StatusCode = tooLarge.Status.Value;
+                await httpContext.Response.WriteAsJsonAsync(tooLarge, options: null, contentType: "application/problem+json", cancellationToken: httpContext.RequestAborted);
+                return;
+            }
+        }
+        if (IsSafe(httpContext.Request.Method) || !HasSession(httpContext) || IsAcceptable(httpContext.Request, photoUpload))
         {
             await next(httpContext);
             return;
@@ -35,7 +56,7 @@ public sealed class CsrfMiddleware(RequestDelegate next, IOptions<AuthSettings> 
         ProblemDetails problem = ProblemDetailsFactory.ForError(
             Error.Validation(new Dictionary<string, string[]>
             {
-                [ExpectedHeader] = [$"Requests with a session must send '{ExpectedHeader}: {ExpectedHeaderValue}' and a JSON body."],
+                [ExpectedHeader] = [$"Requests with a session must send '{ExpectedHeader}: {ExpectedHeaderValue}' and JSON (or multipart on photo upload endpoints)."],
             }),
             httpContext);
 
@@ -59,7 +80,7 @@ public sealed class CsrfMiddleware(RequestDelegate next, IOptions<AuthSettings> 
     private static bool IsSafe(string method) =>
         SafeMethods.Contains(method, StringComparer.OrdinalIgnoreCase);
 
-    private static bool IsAcceptable(HttpRequest request)
+    private static bool IsAcceptable(HttpRequest request, bool photoUpload)
     {
         string? contentType = request.ContentType;
 
@@ -68,6 +89,8 @@ public sealed class CsrfMiddleware(RequestDelegate next, IOptions<AuthSettings> 
 
         string requestedWith = request.Headers[ExpectedHeader].ToString();
 
-        return jsonBody && string.Equals(requestedWith, ExpectedHeaderValue, StringComparison.OrdinalIgnoreCase);
+        bool multipartPhoto = photoUpload && request.HasFormContentType
+            && contentType!.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase);
+        return (jsonBody || multipartPhoto) && string.Equals(requestedWith, ExpectedHeaderValue, StringComparison.OrdinalIgnoreCase);
     }
 }

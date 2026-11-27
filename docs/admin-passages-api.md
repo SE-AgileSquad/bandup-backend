@@ -4,6 +4,10 @@ All routes below require an active `Admin` or `SuperAdmin`. An anonymous, invali
 session receives 401; an ordinary active `User` receives 403. Authentication and permissions
 use the existing cookies and current database role checks.
 
+Passages support one optional photo. Both lists and details include `photo: null` or
+`{ id, url, contentType, sizeBytes }`. Upload, replace, view and remove it through the
+protected `/photo` routes described in [content photos](admin-content-photos-api.md).
+
 ## Passage list — `Admin_ListPassages`
 
 `GET /api/admin/passages?page=1&pageSize=4&status=Draft&search=beekeeping`
@@ -30,7 +34,8 @@ an empty `items` array while retaining the filtered `totalCount`.
       "publishedAt": null,
       "questionCount": 5,
       "updatedAt": "2026-11-22T12:00:00Z",
-      "durationMinutes": 20
+      "durationMinutes": 20,
+      "photo": null
     }
   ],
   "page": 1,

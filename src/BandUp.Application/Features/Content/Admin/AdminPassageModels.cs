@@ -1,4 +1,5 @@
 using BandUp.Domain.Content;
+using BandUp.Application.Features.Media.Admin;
 
 namespace BandUp.Application.Features.Content.Admin;
 
@@ -6,7 +7,7 @@ public sealed record PassageInput(string Title, string Body, string SourceNote, 
 
 public sealed record PassageSummary(
     Guid Id, string Title, PassageStatus Status, int Version, DateTimeOffset? PublishedAt,
-    int QuestionCount, DateTimeOffset? UpdatedAt, int DurationMinutes);
+    int QuestionCount, DateTimeOffset? UpdatedAt, int DurationMinutes, PhotoDetails? Photo);
 
 public sealed record PassageDetails(
     Guid Id,
@@ -23,7 +24,7 @@ public sealed record PassageDetails(
     DateTimeOffset? UpdatedAt,
     bool CanCreateRevision,
     PassagePublicationReadiness PublishReadiness,
-    int DurationMinutes)
+    int DurationMinutes, PhotoDetails? Photo)
 {
     public bool IsReadOnly => Status != PassageStatus.Draft;
     public int WordCount => Body.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;

@@ -16,6 +16,8 @@ internal sealed class WritingPromptConfiguration : IEntityTypeConfiguration<Writ
         builder.ToTable(table => table.HasCheckConstraint("writing_prompts_duration_positive", "duration_minutes > 0"));
         builder.Property(prompt => prompt.DurationMinutes).HasDefaultValue(WritingPrompt.DefaultDurationMinutes);
         builder.Property(prompt => prompt.Id).ValueGeneratedNever();
+        builder.HasOne<BandUp.Domain.Media.MediaImage>().WithMany().HasForeignKey(prompt => prompt.PhotoId)
+            .OnDelete(DeleteBehavior.Restrict);
         builder.Property(prompt => prompt.Title).HasMaxLength(320).IsRequired();
         builder.Property(prompt => prompt.TaskText).IsRequired();
         builder.Property(prompt => prompt.EssayType).HasMaxLength(100).IsRequired();

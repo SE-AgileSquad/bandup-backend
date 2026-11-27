@@ -16,6 +16,17 @@ public sealed class Passage : Entity
     public string SourceNote { get; private set; } = null!;
     public string UsageBasis { get; private set; } = null!;
     public int DurationMinutes { get; private set; } = DefaultDurationMinutes;
+    public Guid? PhotoId { get; private set; }
+
+    public void SetPhoto(Guid? photoId)
+    {
+        EnsureDraft();
+        if (photoId == Guid.Empty)
+        {
+            throw new DomainException("A photo ID cannot be empty.");
+        }
+        PhotoId = photoId;
+    }
     public PassageStatus Status { get; private set; } = PassageStatus.Draft;
     public int Version { get; private set; } = 1;
     public Guid? PreviousVersionId { get; private set; }
@@ -141,6 +152,7 @@ public sealed class Passage : Entity
         Passage revision = CreateDraft(Title, Body, SourceNote, UsageBasis, createdBy, DurationMinutes);
         revision.Version = checked(Version + 1);
         revision.PreviousVersionId = Id;
+        revision.PhotoId = PhotoId;
 
         foreach (Question question in _questions)
         {

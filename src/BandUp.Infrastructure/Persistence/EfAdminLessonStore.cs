@@ -1,5 +1,6 @@
 using BandUp.Application.Common;
 using BandUp.Application.Features.Learning.Admin;
+using BandUp.Application.Features.Media.Admin;
 using BandUp.Domain.Content;
 using BandUp.Domain.Learning;
 using Microsoft.EntityFrameworkCore;
@@ -55,7 +56,10 @@ public sealed class EfAdminLessonStore(BandUpDbContext context) : IAdminLessonSt
             lessons.OrderBy(lesson => lesson.SortOrder).ThenBy(lesson => lesson.Title).ThenBy(lesson => lesson.Id)
                 .Select(lesson => new LessonSummary(
                     lesson.Id, lesson.Title, lesson.QuestionType, lesson.SortOrder, lesson.Status,
-                    lesson.Examples.Count)),
+                    lesson.Examples.Count,
+                    context.MediaImages.Where(image => image.Id == lesson.PhotoId)
+                        .Select(image => new PhotoDetails(image.Id, "/api/admin/lessons/" + lesson.Id + "/photo", image.ContentType, image.SizeBytes))
+                        .SingleOrDefault())),
             page, cancellationToken);
     }
 
@@ -71,7 +75,10 @@ public sealed class EfAdminLessonStore(BandUpDbContext context) : IAdminLessonSt
                 .Select(example => new LessonExampleDetails(
                     example.Id, example.EvidenceSentence, example.Paraphrase, example.SortOrder)).ToArray(),
             lesson.Status == LessonStatus.Draft && !await HasMappingsAsync(id, cancellationToken),
-            LessonPublicationReadiness.FromIssues(lesson.GetPublicationIssues()));
+            LessonPublicationReadiness.FromIssues(lesson.GetPublicationIssues()),
+            await context.MediaImages.Where(image => image.Id == lesson.PhotoId)
+                .Select(image => new PhotoDetails(image.Id, "/api/admin/lessons/" + lesson.Id + "/photo", image.ContentType, image.SizeBytes))
+                .SingleOrDefaultAsync(cancellationToken));
     }
 
     public Task<LessonExampleDetails?> GetExampleAsync(

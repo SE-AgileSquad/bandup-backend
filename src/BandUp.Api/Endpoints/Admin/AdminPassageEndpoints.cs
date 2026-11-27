@@ -27,6 +27,7 @@ public sealed class AdminPassageEndpoints : IEndpointGroup
     {
         RouteGroupBuilder passages = AdminContentHttp.RequireAdmin(endpoints);
         RouteGroupBuilder passage = passages.MapGroup("/{passageId:guid}");
+        passage.MapPhotoEndpoints(BandUp.Application.Features.Media.Admin.PhotoOwner.Passage);
         RouteGroupBuilder questions = passage.MapGroup("/questions");
         RouteGroupBuilder question = questions.MapGroup("/{questionId:guid}");
 

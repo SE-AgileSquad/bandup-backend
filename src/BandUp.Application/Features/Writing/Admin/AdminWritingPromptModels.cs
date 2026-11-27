@@ -1,4 +1,5 @@
 using BandUp.Domain.Writing;
+using BandUp.Application.Features.Media.Admin;
 
 namespace BandUp.Application.Features.Writing.Admin;
 
@@ -8,7 +9,7 @@ public sealed record WritingPromptInput(
 
 public sealed record WritingPromptSummary(
     Guid Id, string Title, string EssayType, int MinWords, int MaxWords, WritingPromptStatus Status,
-    DateTimeOffset UpdatedAt, int DurationMinutes)
+    DateTimeOffset UpdatedAt, int DurationMinutes, PhotoDetails? Photo)
 {
     public int TaskNumber => 2;
 }
@@ -16,7 +17,7 @@ public sealed record WritingPromptSummary(
 public sealed record WritingPromptDetails(
     Guid Id, string Title, string TaskText, string EssayType, int MinWords, int MaxWords,
     WritingPromptStatus Status, Guid CreatedBy, DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt, DateTimeOffset? PublishedAt, int DurationMinutes)
+    DateTimeOffset UpdatedAt, DateTimeOffset? PublishedAt, int DurationMinutes, PhotoDetails? Photo)
 {
     public int TaskNumber => 2;
     public bool IsReadOnly => Status != WritingPromptStatus.Draft;

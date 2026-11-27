@@ -1,6 +1,8 @@
 using BandUp.Application.Abstractions;
 using BandUp.Application.Features.Vocabulary;
 using BandUp.Application.Features.Content.Admin;
+using BandUp.Application.Features.Media.Admin;
+using BandUp.Infrastructure.Media;
 using BandUp.Application.Features.Learning.Admin;
 using BandUp.Application.Features.Billing;
 using BandUp.Application.Features.Dashboard.Admin;
@@ -51,6 +53,14 @@ public static class DependencyInjection
         services.AddSecurity(configuration);
         services.AddEmailDelivery();
         services.AddBilling();
+        services.AddOptions<CloudinarySettings>().BindConfiguration("Cloudinary");
+        services.AddHttpClient("CloudinaryImages", client => client.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+            .RemoveAllLoggers();
+        services.AddSingleton<IImageStorage, CloudinaryImageStorage>();
+        services.AddScoped<IAdminPhotoStore, EfAdminPhotoStore>();
+        services.AddSingleton<ImageCleanupService>();
+        services.AddHostedService<ImageCleanupWorker>();
 
         return services;
     }

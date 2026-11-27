@@ -23,6 +23,7 @@ public sealed class AdminWritingPromptEndpoints : IEndpointGroup
     {
         RouteGroupBuilder prompts = AdminContentHttp.RequireAdmin(endpoints);
         RouteGroupBuilder prompt = prompts.MapGroup("/{promptId:guid}");
+        prompt.MapPhotoEndpoints(BandUp.Application.Features.Media.Admin.PhotoOwner.WritingPrompt);
 
         prompts.MapGet("", (int? page, int? pageSize, WritingPromptStatus? status, string? search,
                 IDispatcher dispatcher, HttpContext http) =>

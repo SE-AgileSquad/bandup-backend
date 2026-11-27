@@ -41,6 +41,7 @@ Tests live in `tests/`: unit, architecture, and integration (Testcontainers).
 | [docs/admin-passages-api.md](docs/admin-passages-api.md) | you are connecting the admin Passages list and card actions |
 | [docs/admin-lessons-api.md](docs/admin-lessons-api.md) | you are connecting the admin Lessons list, filters and archive action |
 | [docs/admin-writing-prompts-api.md](docs/admin-writing-prompts-api.md) | you are connecting the admin Writing Prompts list and editor |
+| [docs/admin-content-photos-api.md](docs/admin-content-photos-api.md) | you are uploading, replacing or displaying Passage, Writing and Lesson photos |
 | [docs/admin-lesson-mappings-api.md](docs/admin-lesson-mappings-api.md) | you are connecting the admin default lesson mapping page |
 | [infra/README.md](infra/README.md) | you want to deploy, or change Docker/Nginx/CI/CD |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | you are about to branch, commit, or open a PR |

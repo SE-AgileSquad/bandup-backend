@@ -177,6 +177,10 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(20)
                         .HasColumnName("duration_minutes");
 
+                    b.Property<Guid?>("PhotoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("photo_id");
+
                     b.Property<Guid?>("PreviousVersionId")
                         .HasColumnType("uuid")
                         .HasColumnName("previous_version_id");
@@ -218,6 +222,9 @@ namespace BandUp.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CreatedBy")
                         .HasDatabaseName("ix_passages_created_by");
+
+                    b.HasIndex("PhotoId")
+                        .HasDatabaseName("ix_passages_photo_id");
 
                     b.HasIndex("PreviousVersionId")
                         .HasDatabaseName("ix_passages_previous_version_id");
@@ -671,6 +678,10 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("body");
 
+                    b.Property<Guid?>("PhotoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("photo_id");
+
                     b.Property<string>("QuestionType")
                         .IsRequired()
                         .HasColumnType("text")
@@ -692,6 +703,9 @@ namespace BandUp.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_lessons");
+
+                    b.HasIndex("PhotoId")
+                        .HasDatabaseName("ix_lessons_photo_id");
 
                     b.ToTable("lessons", "learning", t =>
                         {
@@ -800,6 +814,61 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_lesson_progress_user_id_lesson_id");
 
                     b.ToTable("lesson_progress", "learning");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Media.MediaImage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("format");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("storage_key");
+
+                    b.Property<Guid>("UploadedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("uploaded_by");
+
+                    b.HasKey("Id")
+                        .HasName("pk_images");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("ix_images_created_at");
+
+                    b.HasIndex("StorageKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_images_storage_key");
+
+                    b.HasIndex("UploadedBy")
+                        .HasDatabaseName("ix_images_uploaded_by");
+
+                    b.ToTable("images", "media", t =>
+                        {
+                            t.HasCheckConstraint("images_size_positive", "size_bytes > 0");
+                        });
                 });
 
             modelBuilder.Entity("BandUp.Domain.Vocabulary.ParaphrasePair", b =>
@@ -992,6 +1061,10 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("min_words");
 
+                    b.Property<Guid?>("PhotoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("photo_id");
+
                     b.Property<DateTimeOffset?>("PublishedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("published_at");
@@ -1021,6 +1094,9 @@ namespace BandUp.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CreatedBy")
                         .HasDatabaseName("ix_writing_prompts_created_by");
+
+                    b.HasIndex("PhotoId")
+                        .HasDatabaseName("ix_writing_prompts_photo_id");
 
                     b.HasIndex("Status", "UpdatedAt", "Id")
                         .HasDatabaseName("ix_writing_prompts_status_updated_at_id");
@@ -1059,6 +1135,12 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_passages_users_created_by");
+
+                    b.HasOne("BandUp.Domain.Media.MediaImage", null)
+                        .WithMany()
+                        .HasForeignKey("PhotoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_passages_images_photo_id");
 
                     b.HasOne("BandUp.Domain.Content.Passage", null)
                         .WithMany()
@@ -1141,6 +1223,15 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_refresh_tokens_users_user_id");
                 });
 
+            modelBuilder.Entity("BandUp.Domain.Learning.Lesson", b =>
+                {
+                    b.HasOne("BandUp.Domain.Media.MediaImage", null)
+                        .WithMany()
+                        .HasForeignKey("PhotoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_lessons_images_photo_id");
+                });
+
             modelBuilder.Entity("BandUp.Domain.Learning.LessonExample", b =>
                 {
                     b.HasOne("BandUp.Domain.Learning.Lesson", null)
@@ -1176,6 +1267,16 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_lesson_progress_users_user_id");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Media.MediaImage", b =>
+                {
+                    b.HasOne("BandUp.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UploadedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_images_users_uploaded_by");
                 });
 
             modelBuilder.Entity("BandUp.Domain.Vocabulary.ParaphrasePair", b =>
@@ -1241,6 +1342,12 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_writing_prompts_users_created_by");
+
+                    b.HasOne("BandUp.Domain.Media.MediaImage", null)
+                        .WithMany()
+                        .HasForeignKey("PhotoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_writing_prompts_images_photo_id");
                 });
 
             modelBuilder.Entity("BandUp.Domain.Content.Passage", b =>

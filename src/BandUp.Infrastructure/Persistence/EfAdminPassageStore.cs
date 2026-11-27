@@ -2,6 +2,7 @@ using BandUp.Application.Common;
 using BandUp.Application.Features.Content.Admin;
 using BandUp.Domain.Content;
 using Microsoft.EntityFrameworkCore;
+using BandUp.Application.Features.Media.Admin;
 
 namespace BandUp.Infrastructure.Persistence;
 
@@ -62,7 +63,10 @@ public sealed class EfAdminPassageStore(BandUpDbContext context) : IAdminPassage
                 .ThenBy(passage => passage.Title).ThenBy(passage => passage.Id)
                 .Select(passage => new PassageSummary(
                     passage.Id, passage.Title, passage.Status, passage.Version, passage.PublishedAt,
-                    passage.Questions.Count, passage.UpdatedAt, passage.DurationMinutes)),
+                    passage.Questions.Count, passage.UpdatedAt, passage.DurationMinutes,
+                    context.MediaImages.Where(image => image.Id == passage.PhotoId)
+                        .Select(image => new PhotoDetails(image.Id, "/api/admin/passages/" + passage.Id + "/photo", image.ContentType, image.SizeBytes))
+                        .SingleOrDefault())),
             page, cancellationToken);
     }
 
@@ -79,7 +83,10 @@ public sealed class EfAdminPassageStore(BandUpDbContext context) : IAdminPassage
             passage.Questions.OrderBy(question => question.SortOrder).ThenBy(question => question.Id)
                 .Select(ToDetails).ToArray(), passage.UpdatedAt,
             passage.Status != PassageStatus.Draft && !await HasRevisionAsync(id, cancellationToken),
-            PassagePublicationReadiness.FromIssues(passage.GetPublicationIssues()), passage.DurationMinutes);
+            PassagePublicationReadiness.FromIssues(passage.GetPublicationIssues()), passage.DurationMinutes,
+            await context.MediaImages.Where(image => image.Id == passage.PhotoId)
+                .Select(image => new PhotoDetails(image.Id, "/api/admin/passages/" + passage.Id + "/photo", image.ContentType, image.SizeBytes))
+                .SingleOrDefaultAsync(cancellationToken));
     }
 
     public async Task<QuestionDetails?> GetQuestionAsync(

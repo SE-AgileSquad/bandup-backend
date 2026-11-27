@@ -16,7 +16,18 @@ public sealed class Lesson : Entity
     public QuestionType QuestionType { get; private set; }
     public int SortOrder { get; private set; }
     public LessonStatus Status { get; private set; } = LessonStatus.Draft;
+    public Guid? PhotoId { get; private set; }
     public IReadOnlyList<LessonExample> Examples => _examples.AsReadOnly();
+
+    public void SetPhoto(Guid? photoId)
+    {
+        EnsureEditable();
+        if (photoId == Guid.Empty)
+        {
+            throw new DomainException("A photo ID cannot be empty.");
+        }
+        PhotoId = photoId;
+    }
 
     public static Lesson CreateDraft(string title, string body, QuestionType questionType, int sortOrder)
     {

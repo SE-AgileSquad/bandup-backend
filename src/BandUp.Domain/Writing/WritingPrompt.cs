@@ -16,6 +16,7 @@ public sealed class WritingPrompt : Entity
     public int MinWords { get; private set; }
     public int MaxWords { get; private set; }
     public int DurationMinutes { get; private set; } = DefaultDurationMinutes;
+    public Guid? PhotoId { get; private set; }
     public WritingPromptStatus Status { get; private set; } = WritingPromptStatus.Draft;
     public Guid CreatedBy { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
@@ -117,7 +118,29 @@ public sealed class WritingPrompt : Entity
         UpdatedAt = now;
     }
 
-    public WritingPrompt Duplicate(Guid createdBy, DateTimeOffset now) =>
-        CreateDraft(Title, TaskText, EssayType, MinWords, MaxWords, createdBy, now, DurationMinutes);
+    public void SetPhoto(Guid? photoId, DateTimeOffset now)
+    {
+        if (Status != WritingPromptStatus.Draft)
+        {
+            throw new DomainException("Only a draft writing prompt can change its photo.");
+        }
+        if (photoId == Guid.Empty)
+        {
+            throw new DomainException("A photo ID cannot be empty.");
+        }
+        if (PhotoId == photoId)
+        {
+            return;
+        }
+        PhotoId = photoId;
+        UpdatedAt = now;
+    }
+
+    public WritingPrompt Duplicate(Guid createdBy, DateTimeOffset now)
+    {
+        WritingPrompt copy = CreateDraft(Title, TaskText, EssayType, MinWords, MaxWords, createdBy, now, DurationMinutes);
+        copy.PhotoId = PhotoId;
+        return copy;
+    }
 }
 

@@ -30,6 +30,7 @@ public sealed class AdminLessonEndpoints : IEndpointGroup
     {
         RouteGroupBuilder lessons = AdminContentHttp.RequireAdmin(endpoints);
         RouteGroupBuilder lesson = lessons.MapGroup("/{lessonId:guid}");
+        lesson.MapPhotoEndpoints(BandUp.Application.Features.Media.Admin.PhotoOwner.Lesson);
         RouteGroupBuilder examples = lesson.MapGroup("/examples");
         RouteGroupBuilder example = examples.MapGroup("/{exampleId:guid}");
 
