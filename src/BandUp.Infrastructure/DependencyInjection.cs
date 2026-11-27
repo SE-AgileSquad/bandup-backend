@@ -10,6 +10,8 @@ using BandUp.Application.Features.Learning;
 using BandUp.Application.Features.Learning.Admin.Mappings;
 using BandUp.Application.Features.Reading;
 using BandUp.Application.Features.Writing.Admin;
+using BandUp.Application.Features.Writing;
+using BandUp.Application.Features.Writing.SubmitWritingEssay;
 using BandUp.Infrastructure.Caching;
 using BandUp.Infrastructure.Email;
 using BandUp.Infrastructure.Configuration;
@@ -193,6 +195,11 @@ public static class DependencyInjection
         services.AddScoped<IAdminLessonStore, EfAdminLessonStore>();
         services.AddScoped<IAdminLessonMappingStore, EfAdminLessonMappingStore>();
         services.AddScoped<IAdminWritingPromptStore, EfAdminWritingPromptStore>();
+        services.AddScoped<IWritingSubmissionStore, EfWritingSubmissionStore>();
+        services.AddOptions<WritingAcceptanceSettings>().BindConfiguration("Writing:Acceptance")
+            .Validate(settings => settings.QueueTimeout >= TimeSpan.FromTicks(10),
+                "The queue timeout must be at least one PostgreSQL microsecond.").ValidateOnStart();
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<WritingAcceptanceSettings>>().Value);
         services.AddScoped<IAdminDashboardQueries, AdminDashboardQueries>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
         services.AddScoped<IPasswordResetChallengeStore, EfPasswordResetChallengeStore>();

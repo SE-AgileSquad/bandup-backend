@@ -7,8 +7,9 @@ public static class EssayPolicy
 {
     public const int MaxScalars = 8000;
 
-    public static bool IsValid(string? essay) =>
-        essay is not null && FitsScalarLimit(essay, MaxScalars) && Count(essay) is >= 100 and <= 350;
+    public static bool IsStructurallySafe(string? essay) => essay is not null && FitsScalarLimit(essay, MaxScalars);
+
+    public static bool IsValid(string? essay) => IsStructurallySafe(essay) && Count(essay) is >= 100 and <= 350;
 
     internal static bool FitsScalarLimit(string text, int maximum)
     {

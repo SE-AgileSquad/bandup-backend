@@ -134,7 +134,7 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         await VerifyAsync(factory, owner, 1);
     }
 
-    private static async Task WaitForBlockAsync(BandUpDbContext holder, BandUpDbContext waiter, CancellationToken ct)
+    internal static async Task WaitForBlockAsync(BandUpDbContext holder, BandUpDbContext waiter, CancellationToken ct)
     {
         int pid = ((NpgsqlConnection)waiter.Database.GetDbConnection()).ProcessID;
         while (!await holder.Database.SqlQuery<bool>(
