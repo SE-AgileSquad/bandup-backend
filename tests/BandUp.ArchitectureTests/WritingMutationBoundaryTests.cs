@@ -41,7 +41,7 @@ public sealed class WritingMutationBoundaryTests
     [InlineData("BandUpDbContext", "AllowWritingLifecycleChange", "EfWritingSubmissionStore")]
     [InlineData("BandUpDbContext", "AllowWritingFeedbackInsert", "EfWritingSubmissionStore")]
     [InlineData("BandUpDbContext", "AllowWritingSubmissionInsert", "EfWritingSubmissionStore")]
-    [InlineData("BandUpDbContext", "get_WritingFeedbacks", "EfWritingSubmissionStore")]
+    [InlineData("BandUpDbContext", "get_WritingFeedbacks", "EfWritingSubmissionQueries,EfWritingSubmissionStore")]
     public void OnlyTheOwningProductionPathCallsEachRawMutation(string target, string method, string expectedCaller)
     {
         var assemblies = new[]

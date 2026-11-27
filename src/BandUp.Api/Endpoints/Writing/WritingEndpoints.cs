@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Unicode;
@@ -50,6 +51,50 @@ public sealed class WritingEndpoints(IConfiguration configuration) : IEndpointGr
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status413PayloadTooLarge);
+
+        var reads = endpoints.MapGroup("/submissions")
+            .WithMetadata(new PrivateWritingResponse())
+            .RequireAuthorization();
+
+        reads.MapGet("", ListSubmissionsAsync).WithName("Writing_ListSubmissions");
+        reads.MapGet("/{id:guid}", (Guid id, IDispatcher dispatcher, HttpContext context, CancellationToken ct) =>
+            ReadAsync<GetWritingStatusQuery, WritingEvaluationStatusDto>(new(id), dispatcher, context, ct))
+            .WithName("Writing_GetStatus");
+        reads.MapGet("/{id:guid}/detail", (Guid id, IDispatcher dispatcher, HttpContext context, CancellationToken ct) =>
+            ReadAsync<GetWritingDetailQuery, WritingSubmissionDetailDto>(new(id), dispatcher, context, ct))
+            .WithName("Writing_GetDetail");
+        reads.MapGet("/{id:guid}/result", (Guid id, IDispatcher dispatcher, HttpContext context, CancellationToken ct) =>
+            ReadAsync<GetWritingResultQuery, WritingEvaluationResultDto>(new(id), dispatcher, context, ct))
+            .WithName("Writing_GetResult");
+    }
+
+    private static Task<IResult> ListSubmissionsAsync(IDispatcher dispatcher, HttpContext context, CancellationToken ct)
+    {
+        var query = context.Request.Query;
+        if (!TryReadPageValue(query, "page", 1, out var page))
+        {
+            return Task.FromResult(Invalid(context, "page", "Send one integer page value."));
+        }
+        if (!TryReadPageValue(query, "pageSize", PageRequest.DefaultPageSize, out var pageSize))
+        {
+            return Task.FromResult(Invalid(context, "pageSize", "Send one integer page size."));
+        }
+        return ReadAsync<ListWritingSubmissionsQuery, PagedResult<WritingSubmissionHistoryItemDto>>(
+            new(new PageRequest(page, pageSize)), dispatcher, context, ct);
+    }
+
+    private static bool TryReadPageValue(IQueryCollection query, string name, int fallback, out int value)
+    {
+        value = fallback;
+        return !query.TryGetValue(name, out var values) || (values.Count == 1 &&
+            int.TryParse(values[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out value));
+    }
+
+    private static async Task<IResult> ReadAsync<TQuery, TResponse>(TQuery query, IDispatcher dispatcher,
+        HttpContext context, CancellationToken ct) where TQuery : IQuery<TResponse>
+    {
+        var result = await dispatcher.QueryAsync<TQuery, TResponse>(query, ct);
+        return result.IsSuccess ? TypedResults.Ok(result.Value) : result.ToProblem(context);
     }
 
     private static async Task<IResult> ListPromptsAsync(IDispatcher dispatcher, HttpContext context, CancellationToken ct)

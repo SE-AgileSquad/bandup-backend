@@ -30,12 +30,15 @@ internal sealed class WritingFeedbackConfiguration : IEntityTypeConfiguration<Wr
     }
 
     // Use the same DTO as the public result so JSON naming, evidence omission and rounding stay in sync.
-    private static string Serialize(WritingFeedbackContent content)
+    private static string Serialize(WritingFeedbackContent content) =>
+        JsonSerializer.Serialize(ToPublicFeedback(content), JsonSerializerOptions.Web);
+
+    internal static WritingFeedbackDto ToPublicFeedback(WritingFeedbackContent content)
     {
         static WritingCriterionFeedbackDto Map(CriterionFeedback c) => new(c.Score, c.Explanation, c.Strengths,
             c.AreasForImprovement, c.Recommendations, c.Evidence?.Select(e => new WritingEvidenceDto(e.Excerpt, e.Observation)).ToArray());
         var criteria = new WritingCriteriaDto(Map(content.Tr), Map(content.Cc), Map(content.Lr), Map(content.Gra));
-        return JsonSerializer.Serialize(new WritingFeedbackDto(content.Summary, criteria), JsonSerializerOptions.Web);
+        return new WritingFeedbackDto(content.Summary, criteria);
     }
 
     private static WritingFeedbackContent Deserialize(string json)

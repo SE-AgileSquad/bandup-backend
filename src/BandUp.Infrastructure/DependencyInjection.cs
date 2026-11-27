@@ -196,6 +196,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminLessonMappingStore, EfAdminLessonMappingStore>();
         services.AddScoped<IAdminWritingPromptStore, EfAdminWritingPromptStore>();
         services.AddScoped<EfWritingSubmissionStore>();
+        services.AddScoped<IWritingSubmissionQueries, EfWritingSubmissionQueries>();
         services.AddScoped<IWritingSubmissionStore>(provider => provider.GetRequiredService<EfWritingSubmissionStore>());
         services.AddScoped<IWritingMutationWriter>(provider => provider.GetRequiredService<EfWritingSubmissionStore>());
         services.AddOptions<WritingAcceptanceSettings>().BindConfiguration("Writing:Acceptance")
