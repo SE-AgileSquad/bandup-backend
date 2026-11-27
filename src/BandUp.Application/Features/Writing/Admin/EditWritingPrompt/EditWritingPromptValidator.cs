@@ -6,6 +6,8 @@ public sealed class EditWritingPromptValidator : AbstractValidator<EditWritingPr
 {
     public EditWritingPromptValidator()
     {
+        RuleFor(command => command.Input.DurationMinutes).Must(minutes => !minutes.HasValue || minutes.Value > 0)
+            .WithMessage("Duration must be a positive number of minutes.").OverridePropertyName("durationMinutes");
         RuleFor(command => command.Input.Title).NotEmpty().MaximumLength(320).OverridePropertyName("title");
         RuleFor(command => command.Input.TaskText).NotEmpty().OverridePropertyName("taskText");
         RuleFor(command => command.Input.EssayType).NotEmpty().MaximumLength(100).OverridePropertyName("essayType");

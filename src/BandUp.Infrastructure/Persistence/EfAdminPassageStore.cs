@@ -62,7 +62,7 @@ public sealed class EfAdminPassageStore(BandUpDbContext context) : IAdminPassage
                 .ThenBy(passage => passage.Title).ThenBy(passage => passage.Id)
                 .Select(passage => new PassageSummary(
                     passage.Id, passage.Title, passage.Status, passage.Version, passage.PublishedAt,
-                    passage.Questions.Count, passage.UpdatedAt)),
+                    passage.Questions.Count, passage.UpdatedAt, passage.DurationMinutes)),
             page, cancellationToken);
     }
 
@@ -79,7 +79,7 @@ public sealed class EfAdminPassageStore(BandUpDbContext context) : IAdminPassage
             passage.Questions.OrderBy(question => question.SortOrder).ThenBy(question => question.Id)
                 .Select(ToDetails).ToArray(), passage.UpdatedAt,
             passage.Status != PassageStatus.Draft && !await HasRevisionAsync(id, cancellationToken),
-            PassagePublicationReadiness.FromIssues(passage.GetPublicationIssues()));
+            PassagePublicationReadiness.FromIssues(passage.GetPublicationIssues()), passage.DurationMinutes);
     }
 
     public async Task<QuestionDetails?> GetQuestionAsync(

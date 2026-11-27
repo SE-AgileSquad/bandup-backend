@@ -6,6 +6,7 @@ public sealed class WritingPrompt : Entity
 {
     public const int WritingMinWords = 100;
     public const int WritingMaxWords = 350;
+    public const int DefaultDurationMinutes = 40;
 
     private WritingPrompt() { }
 
@@ -14,6 +15,7 @@ public sealed class WritingPrompt : Entity
     public string EssayType { get; private set; } = null!;
     public int MinWords { get; private set; }
     public int MaxWords { get; private set; }
+    public int DurationMinutes { get; private set; } = DefaultDurationMinutes;
     public WritingPromptStatus Status { get; private set; } = WritingPromptStatus.Draft;
     public Guid CreatedBy { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
@@ -21,7 +23,7 @@ public sealed class WritingPrompt : Entity
     public DateTimeOffset? PublishedAt { get; private set; }
 
     public static WritingPrompt CreateDraft(string title, string taskText, string essayType,
-        int minWords, int maxWords, Guid createdBy, DateTimeOffset now)
+        int minWords, int maxWords, Guid createdBy, DateTimeOffset now, int durationMinutes = DefaultDurationMinutes)
     {
         if (createdBy == Guid.Empty)
         {
@@ -29,16 +31,21 @@ public sealed class WritingPrompt : Entity
         }
 
         WritingPrompt prompt = new() { CreatedBy = createdBy, CreatedAt = now, UpdatedAt = now };
-        prompt.EditDraft(title, taskText, essayType, minWords, maxWords, now);
+        prompt.EditDraft(title, taskText, essayType, minWords, maxWords, now, durationMinutes);
         return prompt;
     }
 
     public void EditDraft(string title, string taskText, string essayType,
-        int minWords, int maxWords, DateTimeOffset now)
+        int minWords, int maxWords, DateTimeOffset now, int? durationMinutes = null)
     {
         if (Status != WritingPromptStatus.Draft)
         {
             throw new DomainException("Only a draft writing prompt can be edited. Duplicate it to create a new draft.");
+        }
+
+        if (durationMinutes is <= 0)
+        {
+            throw new DomainException("The writing duration must be a positive number of minutes.");
         }
 
         if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(taskText)
@@ -55,7 +62,9 @@ public sealed class WritingPrompt : Entity
         title = title.Trim();
         taskText = taskText.Trim();
         essayType = essayType.Trim();
-        if (Title == title && TaskText == taskText && EssayType == essayType && MinWords == minWords && MaxWords == maxWords)
+        int effectiveDuration = durationMinutes ?? DurationMinutes;
+        if (Title == title && TaskText == taskText && EssayType == essayType && MinWords == minWords
+            && MaxWords == maxWords && DurationMinutes == effectiveDuration)
         {
             return;
         }
@@ -65,6 +74,7 @@ public sealed class WritingPrompt : Entity
         EssayType = essayType;
         MinWords = minWords;
         MaxWords = maxWords;
+        DurationMinutes = effectiveDuration;
         UpdatedAt = now;
     }
 
@@ -108,6 +118,6 @@ public sealed class WritingPrompt : Entity
     }
 
     public WritingPrompt Duplicate(Guid createdBy, DateTimeOffset now) =>
-        CreateDraft(Title, TaskText, EssayType, MinWords, MaxWords, createdBy, now);
+        CreateDraft(Title, TaskText, EssayType, MinWords, MaxWords, createdBy, now, DurationMinutes);
 }
 

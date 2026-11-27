@@ -21,7 +21,7 @@ public sealed class EditPassageHandler(IAdminPassageStore store)
         }
 
         PassageInput input = command.Input;
-        passage.EditDraft(input.Title, input.Body, input.SourceNote, input.UsageBasis);
+        passage.EditDraft(input.Title, input.Body, input.SourceNote, input.UsageBasis, input.DurationMinutes);
         return Result<bool>.Success(true);
     }
 }

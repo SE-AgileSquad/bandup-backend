@@ -16,7 +16,7 @@ public sealed class CreateWritingPromptHandler(IAdminWritingPromptStore store, I
 
         WritingPromptInput input = command.Input;
         WritingPrompt prompt = WritingPrompt.CreateDraft(input.Title, input.TaskText, input.EssayType,
-            input.MinWords, input.MaxWords, actorId, clock.GetUtcNow());
+            input.MinWords, input.MaxWords, actorId, clock.GetUtcNow(), input.DurationMinutes ?? WritingPrompt.DefaultDurationMinutes);
         await store.AddAsync(prompt, cancellationToken);
         return Result<Guid>.Success(prompt.Id);
     }

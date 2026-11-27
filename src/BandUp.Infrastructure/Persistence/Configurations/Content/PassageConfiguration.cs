@@ -13,6 +13,8 @@ internal sealed class PassageConfiguration : IEntityTypeConfiguration<Passage>
     public void Configure(EntityTypeBuilder<Passage> builder)
     {
         builder.ToTable("passages", Schema);
+        builder.ToTable(table => table.HasCheckConstraint("passages_duration_positive", "duration_minutes > 0"));
+        builder.Property(passage => passage.DurationMinutes).HasDefaultValue(Passage.DefaultDurationMinutes);
         builder.HasKey(passage => passage.Id);
         builder.Property(passage => passage.Id).ValueGeneratedNever();
 

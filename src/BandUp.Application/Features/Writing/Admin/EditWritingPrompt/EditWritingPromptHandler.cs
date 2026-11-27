@@ -11,7 +11,7 @@ public sealed class EditWritingPromptHandler(IAdminWritingPromptStore store, Tim
         WritingPromptInput input = command.Input;
         return AdminWritingPromptChanges.ApplyAsync(store, command.PromptId,
             prompt => prompt.EditDraft(input.Title, input.TaskText, input.EssayType,
-                input.MinWords, input.MaxWords, clock.GetUtcNow()), cancellationToken);
+                input.MinWords, input.MaxWords, clock.GetUtcNow(), input.DurationMinutes), cancellationToken);
     }
 }
 

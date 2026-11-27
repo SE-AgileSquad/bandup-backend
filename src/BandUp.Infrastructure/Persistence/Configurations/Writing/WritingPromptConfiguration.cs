@@ -13,6 +13,8 @@ internal sealed class WritingPromptConfiguration : IEntityTypeConfiguration<Writ
         builder.ToTable("writing_prompts", "writing", table => table.HasCheckConstraint(
             "writing_prompts_word_range_check", "min_words > 0 AND max_words >= min_words"));
         builder.HasKey(prompt => prompt.Id);
+        builder.ToTable(table => table.HasCheckConstraint("writing_prompts_duration_positive", "duration_minutes > 0"));
+        builder.Property(prompt => prompt.DurationMinutes).HasDefaultValue(WritingPrompt.DefaultDurationMinutes);
         builder.Property(prompt => prompt.Id).ValueGeneratedNever();
         builder.Property(prompt => prompt.Title).HasMaxLength(320).IsRequired();
         builder.Property(prompt => prompt.TaskText).IsRequired();

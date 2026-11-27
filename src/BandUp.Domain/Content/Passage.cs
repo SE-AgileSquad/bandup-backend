@@ -4,6 +4,7 @@ namespace BandUp.Domain.Content;
 
 public sealed class Passage : Entity
 {
+    public const int DefaultDurationMinutes = 20;
     private readonly List<Question> _questions = [];
 
     private Passage()
@@ -14,6 +15,7 @@ public sealed class Passage : Entity
     public string Body { get; private set; } = null!;
     public string SourceNote { get; private set; } = null!;
     public string UsageBasis { get; private set; } = null!;
+    public int DurationMinutes { get; private set; } = DefaultDurationMinutes;
     public PassageStatus Status { get; private set; } = PassageStatus.Draft;
     public int Version { get; private set; } = 1;
     public Guid? PreviousVersionId { get; private set; }
@@ -27,7 +29,8 @@ public sealed class Passage : Entity
         string body,
         string sourceNote,
         string usageBasis,
-        Guid createdBy)
+        Guid createdBy,
+        int durationMinutes = DefaultDurationMinutes)
     {
         if (createdBy == Guid.Empty)
         {
@@ -35,13 +38,18 @@ public sealed class Passage : Entity
         }
 
         Passage passage = new() { CreatedBy = createdBy };
-        passage.EditDraft(title, body, sourceNote, usageBasis);
+        passage.EditDraft(title, body, sourceNote, usageBasis, durationMinutes);
         return passage;
     }
 
-    public void EditDraft(string title, string body, string sourceNote, string usageBasis)
+    public void EditDraft(string title, string body, string sourceNote, string usageBasis, int? durationMinutes = null)
     {
         EnsureDraft();
+
+        if (durationMinutes is <= 0)
+        {
+            throw new DomainException("The passage duration must be a positive number of minutes.");
+        }
 
         if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(body)
             || string.IsNullOrWhiteSpace(sourceNote) || string.IsNullOrWhiteSpace(usageBasis))
@@ -61,6 +69,7 @@ public sealed class Passage : Entity
         Body = body;
         SourceNote = sourceNote;
         UsageBasis = usageBasis;
+        DurationMinutes = durationMinutes ?? DurationMinutes;
     }
 
     public Question AddQuestion(QuestionType type, string prompt, int sortOrder)
@@ -129,7 +138,7 @@ public sealed class Passage : Entity
             throw new DomainException("Only a previously published passage can be revised.");
         }
 
-        Passage revision = CreateDraft(Title, Body, SourceNote, UsageBasis, createdBy);
+        Passage revision = CreateDraft(Title, Body, SourceNote, UsageBasis, createdBy, DurationMinutes);
         revision.Version = checked(Version + 1);
         revision.PreviousVersionId = Id;
 

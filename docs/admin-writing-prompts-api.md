@@ -15,7 +15,7 @@ inactive accounts receive 401; ordinary users receive 403. Mutations require the
 - Filters combine with AND before counting/paging. Invalid filters return 400. An out-of-range
   page returns empty items with the filtered totalCount. Order: updatedAt descending, title, ID.
 - Returns `{ items, page, pageSize, totalCount }`. Each item has id, title, essayType, minWords,
-  maxWords, status, updatedAt and taskNumber (always 2). The list omits taskText.
+  maxWords, durationMinutes, status, updatedAt and taskNumber (always 2). The list omits taskText.
 - Draft cards use Edit draft, other cards View details; both load the same detail GET route.
   The illustration is frontend presentation.
 
@@ -46,7 +46,8 @@ Create/edit JSON:
   "taskText": "Some people believe remote work improves productivity. To what extent do you agree or disagree?",
   "essayType": "Opinion essay",
   "minWords": 100,
-  "maxWords": 350
+  "maxWords": 350,
+  "durationMinutes": 40
 }
 ```
 
@@ -65,6 +66,12 @@ Three prompts is the FS content-delivery target, not a database or API limit; no
 are automatically inserted into the development database.
 
 Details additionally include taskText, createdBy, createdAt, publishedAt and isReadOnly.
+Both list and detail responses include durationMinutes. It is a positive integer number of
+minutes and is editable on Draft only. Omitted/null on POST uses 40 minutes; omitted/null on
+PUT preserves the saved duration. Zero, negative, fractional and nonnumeric input returns
+400. A changed duration refreshes updatedAt; an unchanged duration does not. Duplicates
+inherit duration and may change it independently. Duration is admin metadata in this sprint;
+no learner timer or submission behavior is implemented or changed by this addition.
 GET details also supplies the admin preview. Only Draft is editable. Published means the admin
 has approved the question content and permitted its use by learners. Calling Publish is that
 approval action; no additional approval flag or AI-generated answer is required. Draft and
@@ -93,8 +100,12 @@ creator FK, status and word-range CHECK constraints and status/update-time index
 not change existing lesson, passage, identity or billing data. Rolling it back drops the
 new table and its prompt data. The schema itself may remain after rollback.
 
-The migration has been generated but not applied to the development database. Apply it in
-Package Manager Console from the repository directory:
+Migration `AddPassageAndWritingDurationMinutes` adds a non-null duration_minutes column
+to writing.writing_prompts, backfills existing prompts with 40, and enforces a positive value.
+It also adds the corresponding Passage duration column with a 20-minute default. Down drops
+only those added columns/constraints. No existing content, status or timestamps are rewritten.
+
+Apply pending migrations in Package Manager Console from the repository directory:
 
 ```powershell
 Set-Location C:\Git\bandup-backend

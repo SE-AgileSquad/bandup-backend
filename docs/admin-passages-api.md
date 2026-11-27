@@ -29,7 +29,8 @@ an empty `items` array while retaining the filtered `totalCount`.
       "version": 1,
       "publishedAt": null,
       "questionCount": 5,
-      "updatedAt": "2026-11-22T12:00:00Z"
+      "updatedAt": "2026-11-22T12:00:00Z",
+      "durationMinutes": 20
     }
   ],
   "page": 1,
@@ -55,11 +56,12 @@ illustration in the design are frontend presentation, not new API fields.
   "title": "Urban Beekeeping in the Digital Age",
   "body": "Passage text...",
   "sourceNote": "BandUp team",
-  "usageBasis": "Original content"
+  "usageBasis": "Original content",
+  "durationMinutes": 20
 }
 ```
 
-All four fields are required and nonblank. Returns 201 with `{ "id": "..." }` and a Location
+All four text fields are required and nonblank. Returns 201 with `{ "id": "..." }` and a Location
 pointing to the detail route. The server supplies the creator, initial Draft status and
 version 1. A new passage has zero questions until they are added separately.
 
@@ -78,6 +80,20 @@ For the design's primary card action, use status Draft to display Edit draft; fo
 or Archived, display View details. Both load the same GET detail endpoint.
 
 ## Passage editor
+
+### Activity duration
+
+POST/PUT accept `durationMinutes`, a positive integer number of minutes. Zero, negative,
+fractional and nonnumeric values return 400. Omitted/null on POST uses 20 minutes;
+omitted/null on PUT preserves the current duration. List and detail GET responses both
+return the saved durationMinutes. Only Draft is editable; use a revision for published
+content. Revisions inherit the source duration and can change it independently.
+Changing duration alone does not reset answer verification. It updates updatedAt;
+saving identical values does not.
+
+This sprint stores and exposes duration in admin APIs only. Learner DTOs, the current
+20-minute exam rule and existing attempt deadlines are unchanged. Applying this metadata
+to learner timers is a separate integration task.
 
 Both admin roles use the same editor APIs. Details/Text/Questions/Review tabs scroll within
 the frontend and use the same passage detail response. The 20-minute reading time comes from
@@ -186,7 +202,9 @@ All mutations use `X-Requested-With: bandup` and `application/json`; send `{}` f
 POST/DELETE actions. All question writes return 404 for a missing question or a question in
 another passage, and 409 for a read-only parent.
 
-The editor changes add no database columns or tables and require no new migration.
+The duration addition requires the `AddPassageAndWritingDurationMinutes` migration.
+It adds a non-null duration_minutes column to content.passages, backfills existing passages
+with 20, and enforces a positive value. The same migration adds the Writing duration column.
 
 ## Update time and migration
 

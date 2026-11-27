@@ -15,7 +15,8 @@ public sealed class CreatePassageHandler(IAdminPassageStore store, ICurrentUser 
         }
 
         PassageInput input = command.Input;
-        Passage draft = Passage.CreateDraft(input.Title, input.Body, input.SourceNote, input.UsageBasis, actorId);
+        Passage draft = Passage.CreateDraft(input.Title, input.Body, input.SourceNote, input.UsageBasis, actorId,
+            input.DurationMinutes ?? Passage.DefaultDurationMinutes);
         await store.AddAsync(draft, cancellationToken);
         return Result<Guid>.Success(draft.Id);
     }
