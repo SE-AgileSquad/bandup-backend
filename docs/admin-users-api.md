@@ -12,6 +12,8 @@ Use the existing `bu_at` authentication cookie. Mutations must send
 `X-Requested-With: bandup` and `Content-Type: application/json`, including DELETE (send `{}`).
 Missing, invalid or deactivated sessions return 401; an active caller without the current
 super-admin role receives 403. Role changes take effect with existing tokens.
+In Development, Swagger supplies the header and an empty JSON body automatically for
+bodyless mutations such as DELETE. Other clients must explicitly supply them.
 Expected application errors use the existing ProblemDetails response with `code` and `traceId`.
 
 ## List users — `Admin_ListUsers`
