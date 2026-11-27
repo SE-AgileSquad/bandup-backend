@@ -3,7 +3,7 @@
 The state of the foundation and implemented product slices, including verified behavior and
 known limits. The detailed auth contract is in [ADR 0016](adr/0016-refresh-logout-contracts-and-commit-outcomes.md).
 
-Last updated: 2026-11-26.
+Last updated: 2026-11-27.
 
 ## Checkpoints
 
@@ -110,6 +110,19 @@ Resend delivery, production deployment and native-browser acceptance remain manu
 
 ## Product slices
 
+Three-step password recovery verification on 2026-11-27: the Release build completed with
+zero warnings/errors and `dotnet test -c Release --no-build` passed **918 tests**, zero failed
+or skipped (15 minutes 15 seconds). Tests cover request/verify/reset through the HTTP API,
+real disposable Mailpit delivery, the Resend adapter with offline transport, strict expiry,
+one-use credentials, wrong-guess persistence, replay/concurrency, accepted versus suppressed
+resends, transactional rollback and session/OTP-login invalidation. The generated
+`AddPasswordResetTokens` migration matches the EF model and was applied to the local developer
+database. A separate local API instance started using existing user secrets; readiness,
+health, Swagger and public response/contract probes passed. An initial PostgreSQL readiness
+timeout cleared on recheck without configuration changes. No new key, package, account or
+real-inbox email was needed. Live Resend inbox delivery and frontend integration remain manual
+acceptance. See [ADR 0019](adr/0019-separate-reset-code-verification.md).
+
 Email OTP login is implemented end to end for existing active accounts. Request and verify
 routes reuse the existing session cookies, refresh/logout and email adapters. Codes have
 independent protected storage and quotas; password reset atomically invalidates pending login
@@ -129,7 +142,7 @@ database are not changed by the implementation or automated tests.
 | Email OTP login | Request/verify endpoints, CAPTCHA on request, separate HMAC-protected one-use codes, atomic Redis quotas, committed guess counters, post-commit delivery, concurrent verification protection and password-reset invalidation |
 | Billing signup | Credit account and ledger with the signup grant; `/me` reads the current balance |
 | Auth developer flow | Fake CAPTCHA and Development Swagger header support; [setup guide](auth-local-setup.md) |
-| Password recovery | Request/reset HTTP endpoints, protected one-use codes, quotas, timing, atomic password reset/refresh revocation/cookie clearing, and local or Resend email delivery; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). Phases 1–6 implementation and offline checks are in place; live Resend/real-inbox acceptance awaits developer configuration. |
+| Password recovery | Request/verify/reset HTTP endpoints, five-minute single-use reset tokens, protected one-use codes, quotas, timing, atomic password reset/refresh revocation/cookie clearing, and local or Resend email delivery; [ADR 0017](adr/0017-email-password-reset-contracts-and-policy.md). The original combined reset body is superseded by [ADR 0019](adr/0019-separate-reset-code-verification.md); live Resend/real-inbox acceptance awaits developer configuration. |
 
 ## Scenario coverage
 

@@ -18,7 +18,7 @@ public sealed class ResetPasswordTimingTests
         FakeTimeProvider time = new();
         ResetPasswordOutcome outcome = completed ? new ResetPasswordOutcome.Completed() : new ResetPasswordOutcome.Rejected();
         Task<Result<ResetPasswordOutcome>> pending = new ResetPasswordTimingBehavior(time).HandleAsync(
-            new ResetPasswordCommand("reset@example.com", "012345", "NewPassword123!"), CancellationToken.None, () =>
+            new ResetPasswordCommand(new string('A', 43), "NewPassword123!"), CancellationToken.None, () =>
             {
                 time.Advance(TimeSpan.FromMilliseconds(100));
                 return Task.FromResult(Result<ResetPasswordOutcome>.Success(outcome));

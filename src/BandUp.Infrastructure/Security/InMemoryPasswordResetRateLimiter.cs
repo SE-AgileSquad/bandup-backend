@@ -18,6 +18,10 @@ public sealed class InMemoryPasswordResetRateLimiter(PasswordResetRateLimitKeys 
         AcquireAsync("verify", email, clientIp, PasswordResetPolicy.VerificationWindow,
             PasswordResetPolicy.MaxVerificationAttemptsPerIp, PasswordResetPolicy.MaxVerificationAttemptsPerEmail, TimeSpan.Zero, cancellationToken);
 
+    public Task<PasswordResetRateLimitDecision> AcquireResetAsync(string tokenHash, string? clientIp, CancellationToken cancellationToken) =>
+        AcquireAsync("reset", tokenHash, clientIp, PasswordResetPolicy.ResetWindow,
+            PasswordResetPolicy.MaxResetAttemptsPerIp, PasswordResetPolicy.MaxResetAttemptsPerToken, TimeSpan.Zero, cancellationToken);
+
     private Task<PasswordResetRateLimitDecision> AcquireAsync(
         string operation, string email, string? clientIp, TimeSpan window, int ipLimit, int emailLimit,
         TimeSpan cooldown, CancellationToken cancellationToken)
@@ -37,7 +41,9 @@ public sealed class InMemoryPasswordResetRateLimiter(PasswordResetRateLimitKeys 
             }
 
             string ipKey = operation + ":ip:" + keys.ClientIp(clientIp);
-            string emailKey = operation + ":email:" + keys.Email(email);
+            string emailKey = operation == "reset"
+                ? operation + ":token:" + keys.ResetToken(email)
+                : operation + ":email:" + keys.Email(email);
             if (!Acquire(ipKey, ipLimit, window, now))
             {
                 return Task.FromResult(PasswordResetRateLimitDecision.ClientRateLimited);

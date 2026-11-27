@@ -2,9 +2,8 @@ using BandUp.Application.Abstractions;
 
 namespace BandUp.Application.Features.Identity.ResetPassword;
 
-/// <summary>AUTH-15: verify the emailed code and replace the password in one operation.</summary>
+/// <summary>Replace the password using the authorization from verify-reset-code.</summary>
 public sealed record ResetPasswordCommand(
-    string Email,
-    string Code,
+    string ResetToken,
     string NewPassword,
     string? ClientIp = null) : ICommand<ResetPasswordOutcome>;

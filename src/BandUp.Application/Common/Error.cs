@@ -13,6 +13,7 @@ public sealed record Error(string Code, string Message, ErrorType Type)
     public const string InvalidCredentialsCode = "INVALID_CREDENTIALS";
     public const string InvalidRefreshTokenCode = "INVALID_REFRESH_TOKEN";
     public const string InvalidPasswordResetCode = "INVALID_PASSWORD_RESET_CODE";
+    public const string InvalidPasswordResetTokenCode = "INVALID_PASSWORD_RESET_TOKEN";
     public const string PasswordResetRateLimitedCode = "PASSWORD_RESET_RATE_LIMITED";
     public const string InvalidOtpLoginCode = "INVALID_OTP_LOGIN_CODE";
     public const string OtpLoginRateLimitedCode = "OTP_LOGIN_RATE_LIMITED";
@@ -54,6 +55,9 @@ public sealed record Error(string Code, string Message, ErrorType Type)
 
     public static Error PasswordResetRateLimited() =>
         new(PasswordResetRateLimitedCode, "Too many password-reset requests. Try again later.", ErrorType.TooManyRequests);
+
+    public static Error InvalidPasswordResetToken() =>
+        new(InvalidPasswordResetTokenCode, "The password-reset token is invalid or has expired.", ErrorType.Unprocessable);
 
     public static Error InvalidOtpLogin() =>
         new(InvalidOtpLoginCode, "The sign-in code is invalid or has expired.", ErrorType.Unauthorized);

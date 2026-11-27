@@ -35,13 +35,19 @@ public sealed class RedisPasswordResetRateLimiter(IConnectionMultiplexer redis, 
         AcquireAsync("verify", email, clientIp, PasswordResetPolicy.VerificationWindow,
             PasswordResetPolicy.MaxVerificationAttemptsPerIp, PasswordResetPolicy.MaxVerificationAttemptsPerEmail, TimeSpan.Zero, cancellationToken);
 
+    public Task<PasswordResetRateLimitDecision> AcquireResetAsync(string tokenHash, string? clientIp, CancellationToken cancellationToken) =>
+        AcquireAsync("reset", tokenHash, clientIp, PasswordResetPolicy.ResetWindow,
+            PasswordResetPolicy.MaxResetAttemptsPerIp, PasswordResetPolicy.MaxResetAttemptsPerToken, TimeSpan.Zero, cancellationToken);
+
     private async Task<PasswordResetRateLimitDecision> AcquireAsync(
         string operation, string email, string? clientIp, TimeSpan window, int ipLimit, int emailLimit,
         TimeSpan cooldown, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         string prefix = $"bandup:{{password-reset}}:{operation}:";
-        RedisKey[] redisKeys = [prefix + "ip:" + keys.ClientIp(clientIp), prefix + "email:" + keys.Email(email), prefix + "cooldown:" + keys.Email(email)];
+        string subject = operation == "reset" ? keys.ResetToken(email) : keys.Email(email);
+        string subjectType = operation == "reset" ? "token:" : "email:";
+        RedisKey[] redisKeys = [prefix + "ip:" + keys.ClientIp(clientIp), prefix + subjectType + subject, prefix + "cooldown:" + subject];
         RedisValue[] arguments = [(long)window.TotalSeconds, ipLimit, emailLimit, (long)cooldown.TotalMilliseconds];
         RedisResult result = await redis.GetDatabase().ScriptEvaluateAsync(Script, redisKeys, arguments).WaitAsync(cancellationToken);
         return (int)result switch

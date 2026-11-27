@@ -24,4 +24,6 @@ public interface IPasswordResetChallengeStore
     /// </summary>
     Task InvalidateOthersAsync(
         Guid userId, Guid retainedChallengeId, DateTimeOffset invalidatedAt, CancellationToken cancellationToken);
+
+    Task InvalidateAllForUserAsync(Guid userId, DateTimeOffset invalidatedAt, CancellationToken cancellationToken);
 }
