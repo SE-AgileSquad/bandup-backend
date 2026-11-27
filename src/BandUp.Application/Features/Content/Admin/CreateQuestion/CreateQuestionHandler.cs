@@ -4,7 +4,7 @@ using BandUp.Domain.Content;
 
 namespace BandUp.Application.Features.Content.Admin.CreateQuestion;
 
-public sealed class CreateQuestionHandler(IAdminPassageStore store)
+public sealed class CreateQuestionHandler(IAdminPassageStore store, ICurrentUser currentUser, TimeProvider clock)
     : ICommandHandler<CreateQuestionCommand, Guid>
 {
     public async Task<Result<Guid>> HandleAsync(CreateQuestionCommand command, CancellationToken cancellationToken)
@@ -22,6 +22,7 @@ public sealed class CreateQuestionHandler(IAdminPassageStore store)
 
         QuestionInput input = command.Input;
         Question question = passage.AddQuestion(input.Type!.Value, input.Prompt, input.SortOrder);
-        return Result<Guid>.Success(question.Id);
+        Result<bool> saved = AdminQuestionContent.Apply(question, input, currentUser, clock);
+        return saved.IsSuccess ? Result<Guid>.Success(question.Id) : Result<Guid>.Failure(saved.Error!);
     }
 }

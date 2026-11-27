@@ -3,10 +3,13 @@ using BandUp.Application.Common;
 
 namespace BandUp.Application.Features.Content.Admin.EditQuestion;
 
-public sealed class EditQuestionHandler(IAdminPassageStore store)
+public sealed class EditQuestionHandler(IAdminPassageStore store, ICurrentUser currentUser, TimeProvider clock)
     : ICommandHandler<EditQuestionCommand, bool>
 {
-    public Task<Result<bool>> HandleAsync(EditQuestionCommand command, CancellationToken cancellationToken) =>
-        AdminDraftQuestion.ChangeAsync(store, command.PassageId, command.QuestionId, "prompt",
-            question => question.EditDraft(command.Input.Prompt, command.Input.SortOrder), cancellationToken);
+    public async Task<Result<bool>> HandleAsync(EditQuestionCommand command, CancellationToken cancellationToken)
+    {
+        var draft = await AdminDraftQuestion.LoadAsync(store, command.PassageId, command.QuestionId, cancellationToken);
+        return draft.IsFailure ? Result<bool>.Failure(draft.Error!)
+            : AdminQuestionContent.Apply(draft.Value, command.Input, currentUser, clock);
+    }
 }

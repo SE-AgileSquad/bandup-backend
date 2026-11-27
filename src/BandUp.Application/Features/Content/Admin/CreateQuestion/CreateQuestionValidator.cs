@@ -11,5 +11,6 @@ public sealed class CreateQuestionValidator : AbstractValidator<CreateQuestionCo
             .WithMessage("A supported question type is required.")
             .OverridePropertyName("type");
         RuleFor(command => command.Input.Prompt).NotEmpty().OverridePropertyName("prompt");
+        RuleForEach(command => command.Input.AcceptedVariants).NotEmpty().OverridePropertyName("acceptedVariants");
     }
 }

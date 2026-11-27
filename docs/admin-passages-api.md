@@ -112,15 +112,54 @@ Use `/api/admin/passages/{passageId}/questions` as the question collection path,
 
 | Method and suffix | Body / behavior |
 |---|---|
-| `POST` collection | `{ "type": "TrueFalseNotGiven", "prompt": "A claim.", "sortOrder": 1 }`; returns 201 `{ "id": "..." }`. The other supported type is `SentenceCompletion`. |
+| `POST` collection | Creates the question, answer, explanation and review state atomically using the unified JSON below; returns 201 `{ "id": "..." }`. |
 | `GET` question | Full question, explanation and answer key, or 404 when it does not belong to the passage. |
-| `PUT` question | `{ "prompt": "Updated claim.", "sortOrder": 1 }`; returns 204. |
-| `DELETE` question | Removes the draft question; returns 204. |
-| `PUT /answer-key` | `{ "correctAnswer": "True", "acceptedVariants": [] }`; returns 204. TFNG accepts True/False/Not Given, case-insensitively. Variants are only supported for Sentence Completion. |
-| `DELETE /answer-key` | Clears the draft's answer while retaining the question and explanation; returns 204, including if already absent. |
-| `PUT /explanation` | Sets all four fields: `explanation`, `evidenceSentence`, `misleadingSentence`, `unspecifiedPart`. Omitted/null/blank fields clear the saved value. Incomplete explanations can be saved in a draft; returns 204. |
-| `POST /answer-key/verify` | Checks the answer and explanation, then records the current admin and server time; returns 204. Complete content is required. |
-| `DELETE /answer-key/verify` | Unchecks verification without clearing the answer/explanation; returns 204. |
+| `PUT` question | Replaces the complete saved question content and review state in one transaction; returns 204. Question type remains immutable. |
+| `DELETE` question | Removes the draft question and its answer key; returns 204. |
+
+Create JSON (omit type for PUT):
+
+```json
+{
+  "type": "TrueFalseNotGiven",
+  "prompt": "All gardens received funding.",
+  "sortOrder": 1,
+  "correctAnswer": "False",
+  "acceptedVariants": [],
+  "explanation": "Only some gardens received funding.",
+  "evidenceSentence": "Some gardens received funding.",
+  "misleadingSentence": null,
+  "unspecifiedPart": null,
+  "isVerified": true
+}
+```
+
+The other supported type is SentenceCompletion. TFNG accepts True/False/Not Given,
+case-insensitively. acceptedVariants is supported only for SentenceCompletion with a
+nonblank correctAnswer; variants must be nonblank. Invalid answers/variants return 400.
+Drafts can be saved without complete answer/explanation content when isVerified is false.
+
+PUT is a full replacement, not a partial update. Send all content fields from the editor.
+Omitted/null/blank correctAnswer clears the saved key. Omitted/null/blank explanation,
+evidenceSentence, misleadingSentence and unspecifiedPart clear their saved values.
+Omitted/null acceptedVariants means no variants; omitted isVerified means false.
+To clear an answer while retaining explanation, send correctAnswer null and include the
+explanation fields you want to retain. To uncheck review, submit the complete unchanged
+content with isVerified false.
+
+isVerified true is an explicit approval of the submitted content. It requires a complete
+answer/explanation and records the authenticated admin ID and server time. If review is
+incomplete, return 409 with readiness errors and roll back the whole request. Invalid
+creation leaves no question or key; failed editing preserves all prior content, review
+metadata and passage updatedAt. No client-supplied reviewer ID or timestamp is accepted.
+An unchanged verified save preserves the original reviewer/time; changing content with
+isVerified true reviews the new content. Changing content with false leaves it unverified.
+
+The separate answer-key, explanation and answer-key/verify routes and their command handlers
+have been removed. Existing clients must switch to the unified question POST/PUT. GET
+question and GET passage still return the full question with nested answerKey details,
+including isVerified, verifiedBy and verifiedAt. The outer question response does not add
+a second copy of the answer or review fields.
 
 For True/False and Sentence Completion, verification requires a nonblank explanation and
 evidence sentence, with no unspecified part. For Not Given, verification requires an
@@ -128,10 +167,11 @@ explanation and the unspecified information, with no evidence sentence. A mislea
 sentence is optional. Presence and verification are enforced; the API cannot determine
 whether the teacher's explanation is factually correct.
 
-Changes to the answer, accepted variants, prompt or explanation invalidate that question's
-verification. Changing the passage body invalidates every question's verification. Saving
-identical values preserves verification and `updatedAt`. Save the content before checking
-its verification checkbox.
+Changes to the answer, accepted variants, prompt or explanation invalidate prior verification;
+the unified request may explicitly review the new content with isVerified true. Changing the
+passage body invalidates every question's verification. Saving identical content with the same
+review state preserves verification and updatedAt. The checkbox is saved in the same request
+as the question content. No database migration is required for this API consolidation.
 
 ### Review and publish
 

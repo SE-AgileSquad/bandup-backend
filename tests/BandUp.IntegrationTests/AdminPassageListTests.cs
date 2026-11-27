@@ -106,9 +106,9 @@ public sealed class AdminPassageListTests(BandUpTestEnvironment environment)
         (HttpMethod Method, string Path, object Body)[] changes =
         [
             (HttpMethod.Put, question, new { prompt = "Updated question", sortOrder = 2 }),
-            (HttpMethod.Put, $"{question}/answer-key", new { correctAnswer = "Answer" }),
-            (HttpMethod.Put, $"{question}/explanation", new { explanation = "Explanation", evidenceSentence = "Original body" }),
-            (HttpMethod.Post, $"{question}/answer-key/verify", new { }),
+            (HttpMethod.Put, question, new { prompt = "Updated question", sortOrder = 2, correctAnswer = "Answer" }),
+            (HttpMethod.Put, question, new { prompt = "Updated question", sortOrder = 2, correctAnswer = "Answer", explanation = "Explanation", evidenceSentence = "Original body" }),
+            (HttpMethod.Put, question, new { prompt = "Updated question", sortOrder = 2, correctAnswer = "Answer", explanation = "Explanation", evidenceSentence = "Original body", isVerified = true }),
         ];
         foreach (var change in changes)
         {
@@ -119,7 +119,8 @@ public sealed class AdminPassageListTests(BandUpTestEnvironment environment)
 
         DateTimeOffset verifiedAt = (await UpdatedAtAsync(client, passage))!.Value;
         clock.Advance(TimeSpan.FromMinutes(1));
-        await ChangeAsync(client, HttpMethod.Post, $"{question}/answer-key/verify", new { });
+        await ChangeAsync(client, HttpMethod.Put, question, new { prompt = "Updated question", sortOrder = 2,
+            correctAnswer = "Answer", explanation = "Explanation", evidenceSentence = "Original body", isVerified = true });
         (await UpdatedAtAsync(client, passage)).ShouldBe(verifiedAt);
 
         clock.Advance(TimeSpan.FromMinutes(1));

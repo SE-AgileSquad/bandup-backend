@@ -20,6 +20,29 @@ namespace BandUp.IntegrationTests;
 public sealed class AdminContentRequestTests
 {
     [Theory]
+    [InlineData("POST", "/api/admin/passages/01998a61-7ca4-7c0b-8051-9ee86f71afab/questions")]
+    [InlineData("PUT", "/api/admin/passages/01998a61-7ca4-7c0b-8051-9ee86f71afab/questions/01998a61-7ca4-7c0b-8051-9ee86f71afac")]
+    public async Task Unified_Question_Requests_Cannot_Be_Used_Or_Verified_By_Anonymous_Or_Ordinary_Users(string method, string path)
+    {
+        await using AuthorizationApiFactory factory = new();
+        using HttpClient client = factory.CreateClient();
+        object input = new { type = "TrueFalseNotGiven", prompt = "A claim.", sortOrder = 1,
+            correctAnswer = "True", explanation = "Explanation", evidenceSentence = "Evidence", isVerified = true };
+        using (HttpRequestMessage request = new(new HttpMethod(method), path) { Content = JsonContent.Create(input) })
+        using (HttpResponseMessage response = await client.SendAsync(request))
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        }
+        AccessToken token = factory.Services.GetRequiredService<ITokenService>()
+            .CreateAccessToken(Guid.CreateVersion7(), "User", TimeProvider.System.GetUtcNow());
+        using HttpRequestMessage denied = new(new HttpMethod(method), path) { Content = JsonContent.Create(input) };
+        denied.Headers.Add("Cookie", $"bu_at={token.Value}");
+        denied.Headers.Add("X-Requested-With", "bandup");
+        using HttpResponseMessage forbidden = await client.SendAsync(denied);
+        forbidden.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Theory]
     [InlineData("/api/admin/passages")]
     [InlineData("/api/admin/lessons")]
     [InlineData("/api/admin/users")]

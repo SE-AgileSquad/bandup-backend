@@ -7,5 +7,6 @@ public sealed class EditQuestionValidator : AbstractValidator<EditQuestionComman
     public EditQuestionValidator()
     {
         RuleFor(command => command.Input.Prompt).NotEmpty().OverridePropertyName("prompt");
+        RuleForEach(command => command.Input.AcceptedVariants).NotEmpty().OverridePropertyName("acceptedVariants");
     }
 }

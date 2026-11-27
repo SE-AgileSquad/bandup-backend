@@ -25,18 +25,21 @@ public sealed class AdminContentTests(BandUpTestEnvironment environment)
         string question = await CreateAsync(client, $"{passage}/questions",
             new { type = "SentenceCompletion", prompt = "The birds build ___ on rooftops.", sortOrder = 1 });
 
-        await ExpectAsync(client, HttpMethod.Put, $"{question}/explanation", HttpStatusCode.NoContent,
-            new { explanation = "The text names the place.", evidenceSentence = body });
-        await ExpectAsync(client, HttpMethod.Put, $"{question}/answer-key", HttpStatusCode.NoContent,
-            new { correctAnswer = "their nests", acceptedVariants = new[] { "nests" } });
+        object reviewed = new { prompt = "The birds build ___ on rooftops.", sortOrder = 1,
+            correctAnswer = "their nests", acceptedVariants = new[] { "nests" },
+            explanation = "The text names the place.", evidenceSentence = body, isVerified = true };
+        await ExpectAsync(client, HttpMethod.Put, question, HttpStatusCode.NoContent,
+            new { prompt = "The birds build ___ on rooftops.", sortOrder = 1,
+                correctAnswer = "their nests", acceptedVariants = new[] { "nests" },
+                explanation = "The text names the place.", evidenceSentence = body });
         await ExpectAsync(client, HttpMethod.Post, $"{passage}/publish", HttpStatusCode.Conflict);
         await ExpectStatusAsync(client, passage, "Draft");
 
-        await ExpectAsync(client, HttpMethod.Post, $"{question}/answer-key/verify", HttpStatusCode.NoContent);
+        await ExpectAsync(client, HttpMethod.Put, question, HttpStatusCode.NoContent, reviewed);
         await ExpectAsync(client, HttpMethod.Put, passage, HttpStatusCode.NoContent,
             new { title = "Birds", body = $"{body} They live in cities.", sourceNote = "BandUp", usageBasis = "Original" });
         await ExpectAsync(client, HttpMethod.Post, $"{passage}/publish", HttpStatusCode.Conflict);
-        await ExpectAsync(client, HttpMethod.Post, $"{question}/answer-key/verify", HttpStatusCode.NoContent);
+        await ExpectAsync(client, HttpMethod.Put, question, HttpStatusCode.NoContent, reviewed);
         await ExpectAsync(client, HttpMethod.Post, $"{passage}/publish", HttpStatusCode.NoContent,
             new { reviewConfirmed = true });
         await ExpectStatusAsync(client, passage, "Published");
@@ -52,8 +55,8 @@ public sealed class AdminContentTests(BandUpTestEnvironment environment)
         copiedKey.GetProperty("verifiedAt").ValueKind.ShouldBe(JsonValueKind.Null);
         await ExpectStatusAsync(client, passage, "Published");
 
-        await ExpectAsync(client, HttpMethod.Post,
-            $"{revision}/questions/{copiedQuestionId}/answer-key/verify", HttpStatusCode.NoContent);
+        await ExpectAsync(client, HttpMethod.Put,
+            $"{revision}/questions/{copiedQuestionId}", HttpStatusCode.NoContent, reviewed);
         await ExpectAsync(client, HttpMethod.Post, $"{revision}/publish", HttpStatusCode.NoContent,
             new { reviewConfirmed = true });
         await ExpectStatusAsync(client, passage, "Archived");
@@ -72,9 +75,7 @@ public sealed class AdminContentTests(BandUpTestEnvironment environment)
             new { type = "TrueFalseNotGiven", prompt = "A claim.", sortOrder = 1 });
 
         await ExpectAsync(client, HttpMethod.Put, question, HttpStatusCode.NoContent,
-            new { prompt = "An updated claim.", sortOrder = 2 });
-        await ExpectAsync(client, HttpMethod.Put, $"{question}/answer-key", HttpStatusCode.NoContent,
-            new { correctAnswer = "Not Given" });
+            new { prompt = "An updated claim.", sortOrder = 2, correctAnswer = "Not Given" });
         string questionId = question.Split('/')[^1];
         await ExpectAsync(client, HttpMethod.Delete, $"{otherPassage}/questions/{questionId}", HttpStatusCode.NotFound);
         await ExpectAsync(client, HttpMethod.Delete, question, HttpStatusCode.NoContent);
