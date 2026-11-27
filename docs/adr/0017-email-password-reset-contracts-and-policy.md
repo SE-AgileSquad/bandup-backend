@@ -8,6 +8,10 @@ developer's key and sender setup. Mailpit remains available for local testing.
 
 ## Context
 
+The combined reset request in this ADR is superseded by
+[ADR 0019](0019-separate-reset-code-verification.md): verify the email code first, then submit
+the resulting reset token with the new password. Existing delivery and session policies remain.
+
 AUTH-15 extends Identity with email codes for forgotten-password recovery. Registration,
 password hashing, `User.ChangePassword`, refresh-session revocation and the transaction
 pipeline already exist. This feature uses them without issuing a login session after reset.

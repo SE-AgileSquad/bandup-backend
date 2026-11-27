@@ -3,10 +3,13 @@ using BandUp.Application.Features.Vocabulary;
 using BandUp.Application.Features.Content.Admin;
 using BandUp.Application.Features.Learning.Admin;
 using BandUp.Application.Features.Billing;
+using BandUp.Application.Features.Dashboard.Admin;
 using BandUp.Application.Features.Exams;
 using BandUp.Application.Features.Identity;
 using BandUp.Application.Features.Learning;
+using BandUp.Application.Features.Learning.Admin.Mappings;
 using BandUp.Application.Features.Reading;
+using BandUp.Application.Features.Writing.Admin;
 using BandUp.Infrastructure.Caching;
 using BandUp.Infrastructure.Email;
 using BandUp.Infrastructure.Configuration;
@@ -14,6 +17,7 @@ using BandUp.Infrastructure.Hosting;
 using BandUp.Infrastructure.Messaging;
 using BandUp.Infrastructure.Security;
 using BandUp.Infrastructure.Persistence;
+using BandUp.Infrastructure.Persistence.Queries.Admin;
 using BandUp.Infrastructure.Persistence.Queries.Exams;
 using BandUp.Infrastructure.Persistence.Queries.Learning;
 using BandUp.Infrastructure.Persistence.Queries.Reading;
@@ -91,6 +95,7 @@ public static class DependencyInjection
         // The API opts into startup validation. Other hosts do not require a recovery key
         // unless they resolve recovery services.
         services.AddSingleton<IPasswordResetCodeProtector, PasswordResetCodeProtector>();
+        services.AddSingleton<IPasswordResetTokenProtector, PasswordResetTokenProtector>();
         services.AddSingleton<PasswordResetRateLimitKeys>();
         services.AddSingleton<IPasswordResetRateLimiter>(provider =>
             string.Equals(provider.GetRequiredService<IOptions<PasswordResetSettings>>().Value.RateLimitProvider,
@@ -186,8 +191,12 @@ public static class DependencyInjection
         services.AddScoped<IVocabularyStore, EfVocabularyStore>();
         services.AddScoped<IAdminPassageStore, EfAdminPassageStore>();
         services.AddScoped<IAdminLessonStore, EfAdminLessonStore>();
+        services.AddScoped<IAdminLessonMappingStore, EfAdminLessonMappingStore>();
+        services.AddScoped<IAdminWritingPromptStore, EfAdminWritingPromptStore>();
+        services.AddScoped<IAdminDashboardQueries, AdminDashboardQueries>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
         services.AddScoped<IPasswordResetChallengeStore, EfPasswordResetChallengeStore>();
+        services.AddScoped<IPasswordResetTokenStore, EfPasswordResetTokenStore>();
         services.AddScoped<IOtpLoginChallengeStore, EfOtpLoginChallengeStore>();
         services.AddScoped<ICreditAccountRepository, EfCreditAccountRepository>();
         services.AddScoped<ICreditLedgerRepository, EfCreditLedgerRepository>();

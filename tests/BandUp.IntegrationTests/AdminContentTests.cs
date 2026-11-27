@@ -37,7 +37,8 @@ public sealed class AdminContentTests(BandUpTestEnvironment environment)
             new { title = "Birds", body = $"{body} They live in cities.", sourceNote = "BandUp", usageBasis = "Original" });
         await ExpectAsync(client, HttpMethod.Post, $"{passage}/publish", HttpStatusCode.Conflict);
         await ExpectAsync(client, HttpMethod.Post, $"{question}/answer-key/verify", HttpStatusCode.NoContent);
-        await ExpectAsync(client, HttpMethod.Post, $"{passage}/publish", HttpStatusCode.NoContent);
+        await ExpectAsync(client, HttpMethod.Post, $"{passage}/publish", HttpStatusCode.NoContent,
+            new { reviewConfirmed = true });
         await ExpectStatusAsync(client, passage, "Published");
         await ExpectAsync(client, HttpMethod.Put, passage, HttpStatusCode.Conflict, input);
 
@@ -53,7 +54,8 @@ public sealed class AdminContentTests(BandUpTestEnvironment environment)
 
         await ExpectAsync(client, HttpMethod.Post,
             $"{revision}/questions/{copiedQuestionId}/answer-key/verify", HttpStatusCode.NoContent);
-        await ExpectAsync(client, HttpMethod.Post, $"{revision}/publish", HttpStatusCode.NoContent);
+        await ExpectAsync(client, HttpMethod.Post, $"{revision}/publish", HttpStatusCode.NoContent,
+            new { reviewConfirmed = true });
         await ExpectStatusAsync(client, passage, "Archived");
         await ExpectStatusAsync(client, revision, "Published");
     }

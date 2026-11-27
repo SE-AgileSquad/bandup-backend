@@ -147,6 +147,47 @@ public sealed class ReadingContentDomainTests
         passage.PublishedAt.ShouldBe(Now);
     }
 
+    [Fact]
+    public void An_Incomplete_Explanation_Can_Be_Saved_But_All_Publication_Issues_Are_Reported()
+    {
+        Passage passage = CreatePassage();
+        Question missingKey = passage.AddQuestion(QuestionType.SentenceCompletion, "Birds build ___", 1);
+        Question incomplete = passage.AddQuestion(QuestionType.TrueFalseNotGiven, "All birds migrate.", 2);
+        incomplete.SetAnswerKey("False");
+        incomplete.SetExplanation(" ", evidenceSentence: "");
+
+        IReadOnlyList<PublicationIssue> issues = passage.GetPublicationIssues();
+        issues.ShouldContain(issue => issue.QuestionId == missingKey.Id && issue.Field == "answerKey.correctAnswer");
+        issues.ShouldContain(issue => issue.QuestionId == incomplete.Id && issue.Field == "explanation");
+        issues.ShouldContain(issue => issue.QuestionId == incomplete.Id && issue.Field == "evidenceSentence");
+        issues.ShouldContain(issue => issue.QuestionId == incomplete.Id && issue.Field == "answerKey.isVerified");
+        incomplete.Explanation.ShouldBeNull();
+        Should.Throw<DomainException>(() => incomplete.VerifyAnswerKey(AdminId, Now));
+        Should.Throw<DomainException>(() => passage.Publish(Now));
+        passage.Questions.ShouldAllBe(question => question.Status == QuestionStatus.Draft);
+    }
+
+    [Fact]
+    public void Saving_Identical_Answers_And_Explanations_Preserves_Verification()
+    {
+        Passage passage = CreatePassage();
+        Question question = AddVerifiedQuestion(passage);
+        question.SetAnswerKey(" true ");
+        question.SetExplanation(question.Explanation, question.EvidenceSentence);
+        question.AnswerKey!.IsVerified.ShouldBeTrue();
+        question.AnswerKey.VerifiedAt.ShouldBe(Now);
+
+        question.ClearAnswerKeyVerification();
+        question.AnswerKey.IsVerified.ShouldBeFalse();
+        question.VerifyAnswerKey(AdminId, Now);
+        question.SetExplanation(null, question.EvidenceSentence);
+        question.AnswerKey.IsVerified.ShouldBeFalse();
+
+        question.ClearAnswerKey();
+        question.AnswerKey.ShouldBeNull();
+        question.GetPublicationIssues().ShouldContain(issue => issue.Field == "answerKey.correctAnswer");
+    }
+
     private static Passage CreatePassage() =>
         Passage.CreateDraft("Birds", "The birds build nests.", "BandUp team", "Original content", AdminId);
 

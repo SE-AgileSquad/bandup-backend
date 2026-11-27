@@ -20,6 +20,7 @@ internal sealed class PassageConfiguration : IEntityTypeConfiguration<Passage>
         builder.Property(passage => passage.Body).IsRequired();
         builder.Property(passage => passage.SourceNote).IsRequired();
         builder.Property(passage => passage.UsageBasis).IsRequired();
+        builder.Property(passage => passage.UpdatedAt).HasColumnType("timestamptz");
         builder.Property(passage => passage.Status).HasConversion<string>();
         builder.HasEnumCheckConstraint<Passage, PassageStatus>(nameof(Passage.Status));
 

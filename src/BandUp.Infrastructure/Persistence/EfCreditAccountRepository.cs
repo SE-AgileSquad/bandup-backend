@@ -64,4 +64,8 @@ public sealed class EfCreditAccountRepository(BandUpDbContext context) : ICredit
 
     public Task<CreditAccount?> FindByUserIdAsync(Guid userId, CancellationToken cancellationToken) =>
         context.CreditAccounts.FirstOrDefaultAsync(account => account.UserId == userId, cancellationToken);
+
+    // Admin and Writing must reuse the same locked aggregate, including changes awaiting flush.
+    public Task<CreditAccount?> FindByUserIdForUpdateAsync(Guid userId, CancellationToken cancellationToken) =>
+        LockAsync(userId, cancellationToken);
 }

@@ -252,6 +252,109 @@ public sealed class WritingBillingTests(BandUpTestEnvironment environment)
         await VerifyAsync(factory, owner, 1);
     }
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public async Task AdminAndWritingSerializeOnTheSameAccount(bool adminFirst, bool refund)
+    {
+        await using BandUpApiFactory factory = new(environment);
+        Guid owner = await SeedAsync(factory);
+        Guid actor = await SeedAsync(factory);
+        Guid reference = Guid.NewGuid();
+        using var first = factory.Services.CreateScope();
+        using var second = factory.Services.CreateScope();
+        var a = first.ServiceProvider.GetRequiredService<ICreditService>();
+        var b = second.ServiceProvider.GetRequiredService<ICreditService>();
+        var holder = first.ServiceProvider.GetRequiredService<BandUpDbContext>();
+        var waiter = second.ServiceProvider.GetRequiredService<BandUpDbContext>();
+        if (refund)
+        {
+            await using var setup = await holder.Database.BeginTransactionAsync();
+            (await a.ChargeWritingAsync(owner, reference, Ct)).IsSuccess.ShouldBeTrue();
+            await holder.SaveChangesAsync();
+            await setup.CommitAsync();
+        }
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        async Task Apply(ICreditService service, bool admin)
+        {
+            Result result = admin
+                ? await service.AdjustAsync(owner, 2, actor, reference, "review", timeout.Token)
+                : refund ? await service.RefundWritingAsync(owner, reference, timeout.Token)
+                         : await service.ChargeWritingAsync(owner, reference, timeout.Token);
+            result.IsSuccess.ShouldBeTrue();
+        }
+
+        await using var tx1 = await holder.Database.BeginTransactionAsync();
+        await Apply(a, adminFirst);
+        await using var tx2 = await waiter.Database.BeginTransactionAsync();
+        var waiting = Apply(b, !adminFirst);
+        // No UPDATE has run: only the shared SELECT FOR UPDATE can block the second operation.
+        await WaitForBlockAsync(holder, waiter, timeout.Token);
+        await holder.SaveChangesAsync();
+        await tx1.CommitAsync();
+        await waiting;
+        await waiter.SaveChangesAsync();
+        await tx2.CommitAsync();
+        using var check = factory.Services.CreateScope();
+        var db = check.ServiceProvider.GetRequiredService<BandUpDbContext>();
+        var entries = await db.CreditLedger.Where(e => e.UserId == owner).ToListAsync();
+        entries.Count.ShouldBe(refund ? 4 : 3);
+        var referenced = entries.Where(e => e.ReferenceId == reference).ToList();
+        referenced.Count.ShouldBe(entries.Count - 1);
+        var adjustment = referenced.Single(e => e.Reason == CreditLedgerEntry.AdminAdjustReason);
+        adjustment.CreatedByAdminId.ShouldBe(actor);
+        adjustment.Note.ShouldBe("review");
+        adjustment.Delta.ShouldBe(2);
+        referenced.Single(e => e.Reason == CreditLedgerEntry.WritingChargeReason).Delta.ShouldBe(-1);
+        if (refund)
+        {
+            referenced.Single(e => e.Reason == CreditLedgerEntry.WritingRefundReason).Delta.ShouldBe(1);
+        }
+        entries.Sum(e => e.Delta).ShouldBe(refund ? 3 : 2);
+        (await db.CreditAccounts.SingleAsync(e => e.UserId == owner)).Balance.ShouldBe(entries.Sum(e => e.Delta));
+    }
+
+    [Fact]
+    public async Task MixedOperationsPreservePendingChangesAndReplayAcrossFlushAndRollback()
+    {
+        await using BandUpApiFactory factory = new(environment);
+        Guid owner = await SeedAsync(factory);
+        Guid actor = await SeedAsync(factory);
+        Guid reference = Guid.NewGuid();
+        foreach (bool commit in new[] { false, true })
+        {
+            using var scope = factory.Services.CreateScope();
+            var work = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var credit = scope.ServiceProvider.GetRequiredService<ICreditService>();
+            await work.BeginTransactionAsync(Ct);
+            var adjustment = await credit.AdjustAsync(owner, 1, actor, reference, "retry", Ct);
+            adjustment.Value.IsReplay.ShouldBeFalse();
+            (await credit.ChargeWritingAsync(owner, reference, Ct)).IsSuccess.ShouldBeTrue();
+            (await credit.AdjustAsync(owner, 1, actor, reference, "retry", Ct)).Value.IsReplay.ShouldBeTrue();
+            await work.SaveChangesAsync(Ct);
+            (await credit.RefundWritingAsync(owner, reference, Ct)).IsSuccess.ShouldBeTrue();
+            var replay = await credit.AdjustAsync(owner, 1, actor, reference, "retry", Ct);
+            replay.Value.IsReplay.ShouldBeTrue();
+            replay.Value.Balance.ShouldBe(2);
+            await work.SaveChangesAsync(Ct);
+            if (commit)
+            {
+                await work.CommitTransactionAsync(Ct);
+            }
+            else
+            {
+                await work.RollbackTransactionAsync(Ct);
+            }
+        }
+        using var verification = factory.Services.CreateScope();
+        var db = verification.ServiceProvider.GetRequiredService<BandUpDbContext>();
+        (await db.CreditLedger.CountAsync(e => e.ReferenceId == reference)).ShouldBe(3);
+        (await db.CreditAccounts.SingleAsync(e => e.UserId == owner)).Balance.ShouldBe(2);
+    }
+
     private static async Task<Guid> SeedAsync(BandUpApiFactory factory)
     {
         using var scope = factory.Services.CreateScope();

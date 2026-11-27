@@ -63,9 +63,15 @@ public sealed class AnswerKey : Entity
             throw new DomainException("Accepted variants cannot be blank.");
         }
 
+        string[] normalizedVariants = variants.Select(variant => variant.Trim()).ToArray();
+        if (CorrectAnswer == answer && _acceptedVariants.SequenceEqual(normalizedVariants, StringComparer.Ordinal))
+        {
+            return;
+        }
+
         CorrectAnswer = answer;
         _acceptedVariants.Clear();
-        _acceptedVariants.AddRange(variants.Select(variant => variant.Trim()));
+        _acceptedVariants.AddRange(normalizedVariants);
         InvalidateVerification();
     }
 

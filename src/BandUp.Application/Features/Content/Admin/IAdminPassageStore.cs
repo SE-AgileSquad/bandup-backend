@@ -11,7 +11,8 @@ public interface IAdminPassageStore
     Task AddAsync(Passage passage, CancellationToken cancellationToken);
     Task<bool> TryDeletePassageAsync(Guid id, CancellationToken cancellationToken);
     Task<bool> TryDeleteQuestionAsync(Guid passageId, Guid questionId, CancellationToken cancellationToken);
-    Task<PagedResult<PassageSummary>> ListAsync(PageRequest page, CancellationToken cancellationToken);
+    Task<PagedResult<PassageSummary>> ListAsync(
+        PageRequest page, PassageStatus? status, string? search, CancellationToken cancellationToken);
     Task<PassageDetails?> GetAsync(Guid id, CancellationToken cancellationToken);
     Task<QuestionDetails?> GetQuestionAsync(Guid passageId, Guid questionId, CancellationToken cancellationToken);
 }

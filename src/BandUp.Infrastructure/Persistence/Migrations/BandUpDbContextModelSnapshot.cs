@@ -194,6 +194,10 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("title");
 
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
                     b.Property<string>("UsageBasis")
                         .IsRequired()
                         .HasColumnType("text")
@@ -538,6 +542,79 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("BandUp.Domain.Identity.PasswordResetToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ChallengeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("challenge_id");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTimeOffset?>("InvalidatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("invalidated_at");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_password_reset_tokens");
+
+                    b.HasIndex("ChallengeId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_password_reset_tokens_challenge_id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_password_reset_tokens_token_hash");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_password_reset_token_open_user")
+                        .HasFilter("consumed_at IS NULL AND invalidated_at IS NULL");
+
+                    b.ToTable("password_reset_tokens", "identity", t =>
+                        {
+                            t.HasCheckConstraint("password_reset_token_consumption_check", "consumed_at IS NULL OR (consumed_at >= created_at AND consumed_at < expires_at)");
+
+                            t.HasCheckConstraint("password_reset_token_hash_check", "token_hash ~ '^[0-9a-f]{64}$'");
+
+                            t.HasCheckConstraint("password_reset_token_invalidation_check", "invalidated_at IS NULL OR invalidated_at >= created_at");
+
+                            t.HasCheckConstraint("password_reset_token_terminal_check", "consumed_at IS NULL OR invalidated_at IS NULL");
+
+                            t.HasCheckConstraint("password_reset_token_times_check", "expires_at > created_at");
+                        });
+                });
+
             modelBuilder.Entity("BandUp.Domain.Identity.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -644,7 +721,7 @@ namespace BandUp.Infrastructure.Persistence.Migrations
 
                     b.ToTable("users", "identity", t =>
                         {
-                            t.HasCheckConstraint("users_role_check", "role IN ('User', 'Admin')");
+                            t.HasCheckConstraint("users_role_check", "role IN ('User', 'Admin', 'SuperAdmin')");
                         });
                 });
 
@@ -685,7 +762,7 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("lessons_question_type_check", "question_type IN ('TrueFalseNotGiven', 'SentenceCompletion')");
 
-                            t.HasCheckConstraint("lessons_status_check", "status IN ('Draft', 'Published')");
+                            t.HasCheckConstraint("lessons_status_check", "status IN ('Draft', 'Published', 'Archived')");
                         });
                 });
 
@@ -946,6 +1023,75 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                     b.ToTable("vocab_cards", "vocabulary");
                 });
 
+            modelBuilder.Entity("BandUp.Domain.Writing.WritingPrompt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("EssayType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("essay_type");
+
+                    b.Property<int>("MaxWords")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_words");
+
+                    b.Property<int>("MinWords")
+                        .HasColumnType("integer")
+                        .HasColumnName("min_words");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TaskText")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("task_text");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("title");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_writing_prompts");
+
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("ix_writing_prompts_created_by");
+
+                    b.HasIndex("Status", "UpdatedAt", "Id")
+                        .HasDatabaseName("ix_writing_prompts_status_updated_at_id");
+
+                    b.ToTable("writing_prompts", "writing", t =>
+                        {
+                            t.HasCheckConstraint("writing_prompts_status_check", "status IN ('Draft', 'Published', 'Archived')");
+
+                            t.HasCheckConstraint("writing_prompts_word_range_check", "min_words > 0 AND max_words >= min_words");
+                        });
+                });
+
             modelBuilder.Entity("BandUp.Domain.Content.AnswerKey", b =>
                 {
                     b.HasOne("BandUp.Domain.Content.Question", null)
@@ -1040,6 +1186,23 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_password_reset_challenges_users_user_id");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Identity.PasswordResetToken", b =>
+                {
+                    b.HasOne("BandUp.Domain.Identity.PasswordResetChallenge", null)
+                        .WithMany()
+                        .HasForeignKey("ChallengeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_password_reset_tokens_password_reset_challenges_challenge_id");
+
+                    b.HasOne("BandUp.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_password_reset_tokens_users_user_id");
                 });
 
             modelBuilder.Entity("BandUp.Domain.Identity.RefreshToken", b =>
@@ -1142,6 +1305,16 @@ namespace BandUp.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_vocab_cards_users_user_id");
+                });
+
+            modelBuilder.Entity("BandUp.Domain.Writing.WritingPrompt", b =>
+                {
+                    b.HasOne("BandUp.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_writing_prompts_users_created_by");
                 });
 
             modelBuilder.Entity("BandUp.Domain.Content.Passage", b =>

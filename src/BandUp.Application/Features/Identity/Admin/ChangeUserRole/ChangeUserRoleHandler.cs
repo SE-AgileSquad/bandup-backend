@@ -9,16 +9,16 @@ public sealed class ChangeUserRoleHandler(IUserRepository users, ICurrentUser cu
 {
     public async Task<Result<bool>> HandleAsync(ChangeUserRoleCommand command, CancellationToken cancellationToken)
     {
-        if (currentUser.UserId is not { } actorId)
+        if (currentUser.UserId is not { } actorId || !currentUser.IsAuthenticated)
         {
             return Result<bool>.Failure(Error.Unauthorized("An authenticated user is required."));
         }
 
         await users.LockRoleChangesAsync(cancellationToken);
         // The caller may have been demoted while this command waited for the lock.
-        if (!await users.IsActiveAdminAsync(actorId, cancellationToken))
+        if (!await users.IsActiveSuperAdminAsync(actorId, cancellationToken))
         {
-            return Result<bool>.Failure(Error.Forbidden("An active admin is required."));
+            return Result<bool>.Failure(Error.Forbidden("An active super admin is required."));
         }
 
         User? target = await users.GetByIdAsync(command.UserId, cancellationToken);
@@ -33,16 +33,16 @@ public sealed class ChangeUserRoleHandler(IUserRepository users, ICurrentUser cu
             return Result<bool>.Success(false);
         }
 
-        if (target.Role == Role.Admin)
+        if (target.Role == Role.SuperAdmin)
         {
-            if (target.IsActive && await users.CountActiveAdminsAsync(cancellationToken) <= 1)
+            if (target.IsActive && await users.CountActiveSuperAdminsAsync(cancellationToken) <= 1)
             {
-                return Result<bool>.Failure(Error.Conflict("The last active admin cannot be demoted."));
+                return Result<bool>.Failure(Error.Conflict("The last active super admin cannot be demoted."));
             }
 
             if (target.Id == actorId)
             {
-                return Result<bool>.Failure(Error.Conflict("Admins cannot demote themselves."));
+                return Result<bool>.Failure(Error.Conflict("Super admins cannot demote themselves."));
             }
         }
 

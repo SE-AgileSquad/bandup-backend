@@ -27,17 +27,44 @@ public sealed class EfAdminPassageStore(BandUpDbContext context) : IAdminPassage
     public Task<bool> TryDeletePassageAsync(Guid id, CancellationToken cancellationToken) =>
         EfStoreOperations.TryDeleteAsync(context.Passages.Where(passage => passage.Id == id), cancellationToken);
 
-    public Task<bool> TryDeleteQuestionAsync(Guid passageId, Guid questionId, CancellationToken cancellationToken) =>
-        EfStoreOperations.TryDeleteAsync(
+    public async Task<bool> TryDeleteQuestionAsync(Guid passageId, Guid questionId, CancellationToken cancellationToken)
+    {
+        bool deleted = await EfStoreOperations.TryDeleteAsync(
             context.Questions.Where(question => question.PassageId == passageId && question.Id == questionId),
             cancellationToken);
+        if (deleted)
+        {
+            // ExecuteDelete bypasses change tracking; the parent was locked and loaded by the handler.
+            context.MarkPassageUpdated(passageId);
+        }
 
-    public Task<PagedResult<PassageSummary>> ListAsync(PageRequest page, CancellationToken cancellationToken) =>
-        EfStoreOperations.ReadPageAsync(
-            context.Passages.AsNoTracking().OrderBy(passage => passage.Title).ThenBy(passage => passage.Id)
+        return deleted;
+    }
+
+    public Task<PagedResult<PassageSummary>> ListAsync(
+        PageRequest page, PassageStatus? status, string? search, CancellationToken cancellationToken)
+    {
+        IQueryable<Passage> passages = context.Passages.AsNoTracking();
+        if (status.HasValue)
+        {
+            passages = passages.Where(passage => passage.Status == status.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            string term = search.ToLowerInvariant();
+            passages = passages.Where(passage => passage.Title.ToLower().Contains(term));
+        }
+
+        return EfStoreOperations.ReadPageAsync(
+            passages.OrderByDescending(passage => passage.UpdatedAt.HasValue)
+                .ThenByDescending(passage => passage.UpdatedAt)
+                .ThenBy(passage => passage.Title).ThenBy(passage => passage.Id)
                 .Select(passage => new PassageSummary(
-                    passage.Id, passage.Title, passage.Status, passage.Version, passage.PublishedAt)),
+                    passage.Id, passage.Title, passage.Status, passage.Version, passage.PublishedAt,
+                    passage.Questions.Count, passage.UpdatedAt)),
             page, cancellationToken);
+    }
 
     public async Task<PassageDetails?> GetAsync(Guid id, CancellationToken cancellationToken)
     {
@@ -50,7 +77,9 @@ public sealed class EfAdminPassageStore(BandUpDbContext context) : IAdminPassage
             passage.Id, passage.Title, passage.Body, passage.SourceNote, passage.UsageBasis,
             passage.Status, passage.Version, passage.PreviousVersionId, passage.CreatedBy, passage.PublishedAt,
             passage.Questions.OrderBy(question => question.SortOrder).ThenBy(question => question.Id)
-                .Select(ToDetails).ToArray());
+                .Select(ToDetails).ToArray(), passage.UpdatedAt,
+            passage.Status != PassageStatus.Draft && !await HasRevisionAsync(id, cancellationToken),
+            PassagePublicationReadiness.FromIssues(passage.GetPublicationIssues()));
     }
 
     public async Task<QuestionDetails?> GetQuestionAsync(

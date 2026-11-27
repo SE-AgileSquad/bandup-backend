@@ -44,7 +44,8 @@ public sealed class ResendRecoveryTests(BandUpTestEnvironment environment)
             challenge.CodeMac.ShouldNotBe(code);
             challenge.ConsumedAt.ShouldBeNull();
         }
-        using HttpResponseMessage reset = await client.PostAsJsonAsync("/api/auth/reset-password", new { email, code, newPassword = NewPassword });
+        string resetToken = await RecoveryTestFlow.VerifyAsync(client, email, code);
+        using HttpResponseMessage reset = await client.PostAsJsonAsync("/api/auth/reset-password", new { resetToken, newPassword = NewPassword });
         reset.StatusCode.ShouldBe(HttpStatusCode.NoContent);
         SentEmail notification = await provider.WaitForAsync(2);
         notification.Recipient.ShouldBe(email);
@@ -56,6 +57,7 @@ public sealed class ResendRecoveryTests(BandUpTestEnvironment environment)
         using HttpResponseMessage newLogin = await LoginAsync(client, email, NewPassword);
         newLogin.StatusCode.ShouldBe(HttpStatusCode.OK);
         string renderedLogs = Render(logs);
+        renderedLogs.ShouldNotContain(resetToken);
         renderedLogs.ShouldNotContain(Key);
         renderedLogs.ShouldNotContain(email);
         renderedLogs.ShouldNotContain(code);

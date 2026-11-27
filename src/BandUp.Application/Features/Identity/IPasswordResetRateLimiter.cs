@@ -6,4 +6,6 @@ public interface IPasswordResetRateLimiter
     Task<PasswordResetRateLimitDecision> AcquireRequestAsync(string email, string? clientIp, CancellationToken cancellationToken);
 
     Task<PasswordResetRateLimitDecision> AcquireVerificationAsync(string email, string? clientIp, CancellationToken cancellationToken);
+
+    Task<PasswordResetRateLimitDecision> AcquireResetAsync(string tokenHash, string? clientIp, CancellationToken cancellationToken);
 }

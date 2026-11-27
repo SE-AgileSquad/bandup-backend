@@ -91,4 +91,26 @@ public sealed class PasswordResetRateLimiterTests
         _keys.ClientIp(null).ShouldBe(_keys.ClientIp("not-an-ip"));
         _keys.Email("unknown").ShouldNotBe(_keys.ClientIp(null));
     }
+
+    [Fact]
+    public async Task AUTH_17_Reset_Budgets_Are_Independent_Of_Email_Code_Verification_And_Request_Budgets()
+    {
+        var limits = new InMemoryPasswordResetRateLimiter(_keys, _time);
+        string hash = new('a', 64);
+        for (int count = 0; count < 20; count++)
+        {
+            (await limits.AcquireResetAsync(hash, "203.0.113.7", CancellationToken.None)).ShouldBe(PasswordResetRateLimitDecision.Allowed);
+        }
+        (await limits.AcquireResetAsync(hash, "203.0.113.8", CancellationToken.None)).ShouldBe(PasswordResetRateLimitDecision.AccountSuppressed);
+        (await limits.AcquireVerificationAsync("user@example.com", "203.0.113.7", CancellationToken.None)).ShouldBe(PasswordResetRateLimitDecision.Allowed);
+        (await limits.AcquireRequestAsync("user@example.com", "203.0.113.7", CancellationToken.None)).ShouldBe(PasswordResetRateLimitDecision.Allowed);
+        for (int count = 0; count < 80; count++)
+        {
+            (await limits.AcquireResetAsync(Guid.CreateVersion7().ToString("N"), "203.0.113.7", CancellationToken.None)).ShouldBe(PasswordResetRateLimitDecision.Allowed);
+        }
+        (await limits.AcquireResetAsync("another", "203.0.113.7", CancellationToken.None)).ShouldBe(PasswordResetRateLimitDecision.ClientRateLimited);
+        _time.Advance(TimeSpan.FromMinutes(15));
+        (await limits.AcquireResetAsync(hash, "203.0.113.7", CancellationToken.None)).ShouldBe(PasswordResetRateLimitDecision.Allowed);
+        _keys.ResetToken(hash).ShouldNotBe(_keys.Email(hash));
+    }
 }

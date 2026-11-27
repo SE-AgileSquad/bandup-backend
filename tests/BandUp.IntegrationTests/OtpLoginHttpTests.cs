@@ -214,10 +214,11 @@ public sealed class OtpLoginHttpTests(BandUpTestEnvironment environment)
         var seed = await SeedAsync(factory);
         await AddResetCodeAsync(factory, seed.User);
         using HttpClient client = Client(factory);
+        string resetToken = await RecoveryTestFlow.VerifyAsync(client, seed.User.Email, Code);
         Task<HttpResponseMessage> login = VerifyAsync(client, seed.User.Email, Code);
         Task<HttpResponseMessage> reset = client.PostAsJsonAsync("/api/auth/reset-password", new
         {
-            email = seed.User.Email, code = Code, newPassword = "NewPassword456!",
+            resetToken, newPassword = "NewPassword456!",
         });
         await Task.WhenAll(login, reset);
         using HttpResponseMessage loginResult = await login;
@@ -322,9 +323,10 @@ public sealed class OtpLoginHttpTests(BandUpTestEnvironment environment)
         var seed = await SeedAsync(factory);
         await AddResetCodeAsync(factory, seed.User);
         using HttpClient client = Client(factory);
+        string resetToken = await RecoveryTestFlow.VerifyAsync(client, seed.User.Email, Code);
         using HttpResponseMessage reset = await client.PostAsJsonAsync("/api/auth/reset-password", new
         {
-            email = seed.User.Email, code = Code, newPassword = "NewPassword456!",
+            resetToken, newPassword = "NewPassword456!",
         });
         reset.StatusCode.ShouldBe(HttpStatusCode.NoContent);
         using HttpResponseMessage verify = await VerifyAsync(client, seed.User.Email, Code);

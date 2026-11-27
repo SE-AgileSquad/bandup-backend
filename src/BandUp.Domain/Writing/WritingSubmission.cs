@@ -13,7 +13,8 @@ public sealed class WritingSubmission : Entity
         {
             throw new DomainException("A submission requires a user and idempotency key.");
         }
-        if (!prompt.IsActive || !prompt.IsApproved || submittedAt < prompt.UpdatedAt)
+        // New submissions cannot snapshot a prompt version that was not yet available at acceptance.
+        if (!prompt.IsEligibleForSubmission() || submittedAt < prompt.UpdatedAt)
         {
             throw new DomainException("The prompt is unavailable.");
         }
@@ -27,7 +28,7 @@ public sealed class WritingSubmission : Entity
         }
         UserId = userId;
         IdempotencyKey = idempotencyKey;
-        PromptSnapshot = new(prompt.Id, prompt.Title, prompt.PromptText);
+        PromptSnapshot = new(prompt.Id, prompt.Title, prompt.TaskText);
         EssayText = essayText;
         SubmittedAt = submittedAt;
         QueueDeadline = queueDeadline;
@@ -43,7 +44,7 @@ public sealed class WritingSubmission : Entity
     public DateTimeOffset? CompletedAt { get; private set; }
     public WritingEvaluationStatus Status { get; private set; } = WritingEvaluationStatus.Queued;
 
-    // Caller has already looked up this submission by owner and idempotency key.
+    /// <summary>After lookup by owner and key, compare the stored payload before checking current prompt eligibility or credit.</summary>
     public bool MatchesPayload(Guid promptId, string essayText) =>
         promptId == PromptSnapshot.Id && string.Equals(EssayText, essayText, StringComparison.Ordinal);
 

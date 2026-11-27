@@ -1,6 +1,7 @@
 using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
 using BandUp.Application.Features.Content.Admin;
+using BandUp.Application.Features.Content.Admin.ClearQuestionAnswerKey;
 using BandUp.Application.Features.Content.Admin.CreatePassage;
 using BandUp.Application.Features.Content.Admin.CreatePassageRevision;
 using BandUp.Application.Features.Content.Admin.CreateQuestion;
@@ -14,7 +15,9 @@ using BandUp.Application.Features.Content.Admin.ListAdminPassages;
 using BandUp.Application.Features.Content.Admin.PublishPassage;
 using BandUp.Application.Features.Content.Admin.SetQuestionAnswerKey;
 using BandUp.Application.Features.Content.Admin.SetQuestionExplanation;
+using BandUp.Application.Features.Content.Admin.UnverifyQuestionAnswerKey;
 using BandUp.Application.Features.Content.Admin.VerifyQuestionAnswerKey;
+using BandUp.Domain.Content;
 
 namespace BandUp.Api.Endpoints.Admin;
 
@@ -32,11 +35,14 @@ public sealed class AdminPassageEndpoints : IEndpointGroup
         RouteGroupBuilder questions = passage.MapGroup("/questions");
         RouteGroupBuilder question = questions.MapGroup("/{questionId:guid}");
 
-        passages.MapGet("", (int? page, int? pageSize, IDispatcher dispatcher, HttpContext http) =>
+        passages.MapGet("", (int? page, int? pageSize, PassageStatus? status, string? search,
+                IDispatcher dispatcher, HttpContext http) =>
                 AdminContentHttp.ReadAsync<ListAdminPassagesQuery, PagedResult<PassageSummary>>(
-                    new ListAdminPassagesQuery(new PageRequest(page ?? 1, pageSize ?? PageRequest.DefaultPageSize)),
+                    new ListAdminPassagesQuery(new PageRequest(page ?? 1, pageSize ?? PageRequest.DefaultPageSize),
+                        status, search),
                     dispatcher, http))
-            .WithName("Admin_ListPassages").Produces<PagedResult<PassageSummary>>();
+            .WithName("Admin_ListPassages").Produces<PagedResult<PassageSummary>>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
 
         passages.MapPost("", (PassageInput input, IDispatcher dispatcher, HttpContext http) =>
                 AdminContentHttp.CreatedAsync(new CreatePassageCommand(input), ResourcePath, dispatcher, http))
@@ -59,10 +65,11 @@ public sealed class AdminPassageEndpoints : IEndpointGroup
             .WithName("Admin_DeletePassage").Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
 
-        passage.MapPost("/publish", (Guid passageId, IDispatcher dispatcher, HttpContext http) =>
-                AdminContentHttp.ChangeAsync(new PublishPassageCommand(passageId), dispatcher, http))
+        passage.MapPost("/publish", (Guid passageId, PublishPassageInput input, IDispatcher dispatcher, HttpContext http) =>
+                AdminContentHttp.ChangeAsync(new PublishPassageCommand(passageId, input.ReviewConfirmed), dispatcher, http))
             .WithName("Admin_PublishPassage").Produces(StatusCodes.Status204NoContent)
-            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
+            .ProducesProblem(StatusCodes.Status400BadRequest).ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         passage.MapPost("/revisions", (Guid passageId, IDispatcher dispatcher, HttpContext http) =>
                 AdminContentHttp.CreatedAsync(new CreatePassageRevisionCommand(passageId), ResourcePath, dispatcher, http))
@@ -112,6 +119,18 @@ public sealed class AdminPassageEndpoints : IEndpointGroup
                 Guid passageId, Guid questionId, IDispatcher dispatcher, HttpContext http) =>
                 AdminContentHttp.ChangeAsync(new VerifyQuestionAnswerKeyCommand(passageId, questionId), dispatcher, http))
             .WithName("Admin_VerifyQuestionAnswerKey").Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
+
+        question.MapDelete("/answer-key/verify", (
+                Guid passageId, Guid questionId, IDispatcher dispatcher, HttpContext http) =>
+                AdminContentHttp.ChangeAsync(new UnverifyQuestionAnswerKeyCommand(passageId, questionId), dispatcher, http))
+            .WithName("Admin_UnverifyQuestionAnswerKey").Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
+
+        question.MapDelete("/answer-key", (
+                Guid passageId, Guid questionId, IDispatcher dispatcher, HttpContext http) =>
+                AdminContentHttp.ChangeAsync(new ClearQuestionAnswerKeyCommand(passageId, questionId), dispatcher, http))
+            .WithName("Admin_ClearQuestionAnswerKey").Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
     }
 }

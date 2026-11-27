@@ -5,6 +5,7 @@ using BandUp.Application.Features.Identity;
 using BandUp.Application.Features.Identity.Login;
 using BandUp.Application.Features.Identity.Refresh;
 using BandUp.Application.Features.Identity.ResetPassword;
+using BandUp.Application.Features.Identity.VerifyResetCode;
 using BandUp.Domain.Identity;
 using BandUp.Infrastructure.Configuration;
 using BandUp.Infrastructure.Email;
@@ -139,7 +140,7 @@ public sealed class ResetPasswordTests(BandUpTestEnvironment environment)
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task AUTH_15_Reset_Save_And_Commit_Failure_Roll_Back_All_State_And_Discard_Notification(bool failSave)
+    public async Task AUTH_17_Code_Verification_Save_And_Commit_Failure_Roll_Back_All_State_And_Discard_Notification(bool failSave)
     {
         Seed seed = await SeedAsync();
         ObservingSender sender = new();
@@ -205,9 +206,20 @@ public sealed class ResetPasswordTests(BandUpTestEnvironment environment)
     private static async Task<Result<ResetPasswordOutcome>> ResetAsync(
         BandUpApiFactory factory, string email, string code = Code, string password = NewPassword)
     {
+        Result<VerifyResetCodeOutcome> verified;
+        await using (AsyncServiceScope verification = factory.Services.CreateAsyncScope())
+        {
+            verified = await verification.ServiceProvider.GetRequiredService<IDispatcher>().SendAsync<VerifyResetCodeCommand, VerifyResetCodeOutcome>(
+                new VerifyResetCodeCommand(email, code, "203.0.113.7"), CancellationToken.None);
+        }
+        if (verified.IsFailure) { return Result<ResetPasswordOutcome>.Failure(verified.Error!); }
+        if (verified.Value is not VerifyResetCodeOutcome.Verified issued)
+        {
+            return Result<ResetPasswordOutcome>.Success(new ResetPasswordOutcome.Rejected());
+        }
         await using AsyncServiceScope scope = factory.Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<IDispatcher>().SendAsync<ResetPasswordCommand, ResetPasswordOutcome>(
-            new ResetPasswordCommand(email, code, password, "203.0.113.7"), CancellationToken.None);
+            new ResetPasswordCommand(issued.ResetToken, password, "203.0.113.7"), CancellationToken.None);
     }
 
     private static async Task<Result<LoginResult>> LoginAsync(BandUpApiFactory factory, string email, string password)

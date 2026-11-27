@@ -4,7 +4,9 @@ namespace BandUp.Application.Features.Content.Admin;
 
 public sealed record PassageInput(string Title, string Body, string SourceNote, string UsageBasis);
 
-public sealed record PassageSummary(Guid Id, string Title, PassageStatus Status, int Version, DateTimeOffset? PublishedAt);
+public sealed record PassageSummary(
+    Guid Id, string Title, PassageStatus Status, int Version, DateTimeOffset? PublishedAt,
+    int QuestionCount, DateTimeOffset? UpdatedAt);
 
 public sealed record PassageDetails(
     Guid Id,
@@ -17,7 +19,14 @@ public sealed record PassageDetails(
     Guid? PreviousVersionId,
     Guid CreatedBy,
     DateTimeOffset? PublishedAt,
-    IReadOnlyList<QuestionDetails> Questions);
+    IReadOnlyList<QuestionDetails> Questions,
+    DateTimeOffset? UpdatedAt,
+    bool CanCreateRevision,
+    PassagePublicationReadiness PublishReadiness)
+{
+    public bool IsReadOnly => Status != PassageStatus.Draft;
+    public int WordCount => Body.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+}
 
 public sealed record QuestionDetails(
     Guid Id,
@@ -33,4 +42,7 @@ public sealed record QuestionDetails(
     AnswerKeyDetails? AnswerKey);
 
 public sealed record AnswerKeyDetails(
-    string CorrectAnswer, IReadOnlyList<string> AcceptedVariants, Guid? VerifiedBy, DateTimeOffset? VerifiedAt);
+    string CorrectAnswer, IReadOnlyList<string> AcceptedVariants, Guid? VerifiedBy, DateTimeOffset? VerifiedAt)
+{
+    public bool IsVerified => VerifiedBy.HasValue && VerifiedAt.HasValue;
+}

@@ -5,6 +5,7 @@ using BandUp.Application.Common;
 using BandUp.Application.Features.Identity.ForgotPassword;
 using BandUp.Application.Features.Identity.Register;
 using BandUp.Application.Features.Identity.ResetPassword;
+using BandUp.Application.Features.Identity.VerifyResetCode;
 using BandUp.Infrastructure.Messaging;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,7 +29,7 @@ public sealed class PasswordResetContractTests
     public void AUTH_15_Both_Recovery_Requests_Reject_Invalid_Email(string? email)
     {
         new ForgotPasswordValidator().Validate(new ForgotPasswordCommand(email!)).IsValid.ShouldBeFalse();
-        new ResetPasswordValidator().Validate(new ResetPasswordCommand(email!, "012345", Password)).IsValid.ShouldBeFalse();
+        new VerifyResetCodeValidator().Validate(new VerifyResetCodeCommand(email!, "012345")).IsValid.ShouldBeFalse();
     }
 
     [Theory]
@@ -39,7 +40,7 @@ public sealed class PasswordResetContractTests
         string email = new string('a', length - "@example.com".Length) + "@example.com";
 
         new ForgotPasswordValidator().Validate(new ForgotPasswordCommand(email)).IsValid.ShouldBe(accepted);
-        new ResetPasswordValidator().Validate(new ResetPasswordCommand(email, "012345", Password)).IsValid.ShouldBe(accepted);
+        new VerifyResetCodeValidator().Validate(new VerifyResetCodeCommand(email, "012345")).IsValid.ShouldBe(accepted);
     }
 
     [Theory]
@@ -48,7 +49,7 @@ public sealed class PasswordResetContractTests
     [InlineData("999999")]
     public void AUTH_15_Code_Validation_Preserves_Leading_Zeroes(string code)
     {
-        new ResetPasswordValidator().Validate(new ResetPasswordCommand(Email, code, Password)).IsValid.ShouldBeTrue();
+        new VerifyResetCodeValidator().Validate(new VerifyResetCodeCommand(Email, code)).IsValid.ShouldBeTrue();
     }
 
     [Theory]
@@ -64,7 +65,7 @@ public sealed class PasswordResetContractTests
     [InlineData("１２３４５６")]
     public void AUTH_15_Code_Validation_Rejects_Non_Ascii_Or_Malformed_Codes(string? code)
     {
-        new ResetPasswordValidator().Validate(new ResetPasswordCommand(Email, code!, Password)).IsValid.ShouldBeFalse();
+        new VerifyResetCodeValidator().Validate(new VerifyResetCodeCommand(Email, code!)).IsValid.ShouldBeFalse();
     }
 
     [Theory]
@@ -95,23 +96,23 @@ public sealed class PasswordResetContractTests
     {
         const string code = "12345X";
         const string password = "secretpass";
-        ValidationBehavior<ResetPasswordCommand, ResetPasswordOutcome> behavior = new([new ResetPasswordValidator()]);
+        ValidationBehavior<VerifyResetCodeCommand, VerifyResetCodeOutcome> behavior = new([new VerifyResetCodeValidator()]);
         bool handlerRan = false;
 
-        Result<ResetPasswordOutcome> result = await behavior.HandleAsync(
-            new ResetPasswordCommand("invalid-email", code, password),
+        Result<VerifyResetCodeOutcome> result = await behavior.HandleAsync(
+            new VerifyResetCodeCommand("invalid-email", code),
             CancellationToken.None,
             () =>
             {
                 handlerRan = true;
-                return Task.FromResult(Result<ResetPasswordOutcome>.Success(new ResetPasswordOutcome.Completed()));
+                return Task.FromResult(Result<VerifyResetCodeOutcome>.Success(new VerifyResetCodeOutcome.Rejected()));
             });
 
         handlerRan.ShouldBeFalse();
         result.IsFailure.ShouldBeTrue();
         result.Error!.Code.ShouldBe(Error.ValidationCode);
         result.Error.ValidationErrors.Keys.ShouldBe(
-            [nameof(ResetPasswordCommand.Email), nameof(ResetPasswordCommand.Code), nameof(ResetPasswordCommand.NewPassword)],
+            [nameof(VerifyResetCodeCommand.Email), nameof(VerifyResetCodeCommand.Code)],
             ignoreOrder: true);
         string messages = string.Join(" ", result.Error.ValidationErrors.Values.SelectMany(errors => errors));
         messages.ShouldNotContain(code);
@@ -122,14 +123,14 @@ public sealed class PasswordResetContractTests
     public async Task AUTH_15_Rejected_Recovery_Outcome_Commits_Attempt_State_Before_Public_Rejection()
     {
         IUnitOfWork unitOfWork = Substitute.For<IUnitOfWork>();
-        TransactionBehavior<ResetPasswordCommand, ResetPasswordOutcome> behavior = new(unitOfWork, new MessageBuffer());
+        TransactionBehavior<VerifyResetCodeCommand, VerifyResetCodeOutcome> behavior = new(unitOfWork, new MessageBuffer());
 
-        Result<ResetPasswordOutcome> result = await behavior.HandleAsync(
-            new ResetPasswordCommand(Email, "012345", Password),
+        Result<VerifyResetCodeOutcome> result = await behavior.HandleAsync(
+            new VerifyResetCodeCommand(Email, "012345"),
             CancellationToken.None,
-            () => Task.FromResult(Result<ResetPasswordOutcome>.Success(new ResetPasswordOutcome.Rejected())));
+            () => Task.FromResult(Result<VerifyResetCodeOutcome>.Success(new VerifyResetCodeOutcome.Rejected())));
 
-        result.Value.ShouldBeOfType<ResetPasswordOutcome.Rejected>();
+        result.Value.ShouldBeOfType<VerifyResetCodeOutcome.Rejected>();
         Received.InOrder(() =>
         {
             unitOfWork.SaveChangesAsync(CancellationToken.None);
@@ -148,6 +149,8 @@ public sealed class PasswordResetContractTests
 
         scope.ServiceProvider.GetRequiredService<IValidator<ForgotPasswordCommand>>()
             .ShouldBeOfType<ForgotPasswordValidator>();
+        scope.ServiceProvider.GetRequiredService<IValidator<VerifyResetCodeCommand>>()
+            .ShouldBeOfType<VerifyResetCodeValidator>();
         scope.ServiceProvider.GetRequiredService<IValidator<ResetPasswordCommand>>()
             .ShouldBeOfType<ResetPasswordValidator>();
     }
@@ -156,7 +159,30 @@ public sealed class PasswordResetContractTests
     {
         new RegisterValidator().Validate(new RegisterCommand(Email, password, "Recovery", null, null))
             .IsValid.ShouldBe(accepted);
-        new ResetPasswordValidator().Validate(new ResetPasswordCommand(Email, "012345", password))
+        new ResetPasswordValidator().Validate(new ResetPasswordCommand(new string('A', 43), password))
             .IsValid.ShouldBe(accepted);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("012345")]
+    [InlineData("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")]
+    [InlineData("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA ")]
+    public void AUTH_17_Reset_Requires_A_Well_Formed_Reset_Token(string? token) =>
+        new ResetPasswordValidator().Validate(new ResetPasswordCommand(token!, Password)).IsValid.ShouldBeFalse();
+
+    [Fact]
+    public async Task AUTH_17_Reset_Validation_Does_Not_Echo_Token_Or_Password()
+    {
+        const string token = "private-token-marker";
+        const string password = "secretpass";
+        var behavior = new ValidationBehavior<ResetPasswordCommand, ResetPasswordOutcome>([new ResetPasswordValidator()]);
+        var result = await behavior.HandleAsync(new ResetPasswordCommand(token, password), CancellationToken.None,
+            () => throw new InvalidOperationException("Invalid input reached the handler."));
+        result.Error!.ValidationErrors.Keys.ShouldBe([nameof(ResetPasswordCommand.ResetToken), nameof(ResetPasswordCommand.NewPassword)], ignoreOrder: true);
+        string messages = string.Join(' ', result.Error.ValidationErrors.Values.SelectMany(errors => errors));
+        messages.ShouldNotContain(token);
+        messages.ShouldNotContain(password);
     }
 }

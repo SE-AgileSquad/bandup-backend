@@ -8,6 +8,7 @@ public sealed class ForgotPasswordHandler(
     IPasswordResetRateLimiter rateLimiter,
     IPasswordResetChallengeStore challenges,
     IPasswordResetCodeProtector codes,
+    IPasswordResetTokenStore resetTokens,
     IPostCommitEmailQueue emailQueue,
     TimeProvider timeProvider) : ICommandHandler<ForgotPasswordCommand, ForgotPasswordOutcome>
 {
@@ -42,6 +43,7 @@ public sealed class ForgotPasswordHandler(
         PasswordResetChallenge challenge = PasswordResetChallenge.Issue(
             id, session.User.Id, mac, now, now.Add(PasswordResetPolicy.CodeLifetime), PasswordResetPolicy.MaxFailedAttempts);
         await challenges.ReplaceAsync(challenge, cancellationToken);
+        await resetTokens.InvalidateAllForUserAsync(session.User.Id, now, cancellationToken);
         emailQueue.Enqueue(new EmailMessage(session.User.Email, "Your BandUp password-reset code",
             $"Your password-reset code is {code}.\n\nThis code expires in 10 minutes.\nIf you did not request a password reset, you can ignore this email."),
             challenge.ExpiresAt);

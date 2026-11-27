@@ -7,7 +7,8 @@ namespace BandUp.Application.Features.Identity.ResetPassword;
 public sealed class ResetPasswordHandler(
     IPasswordResetRateLimiter rateLimiter,
     IPasswordResetChallengeStore challenges,
-    IPasswordResetCodeProtector codes,
+    IPasswordResetTokenProtector tokenProtector,
+    IPasswordResetTokenStore resetTokens,
     IPasswordHasher passwordHasher,
     IRefreshTokenStore refreshTokens,
     IOtpLoginChallengeStore otpLoginChallenges,
@@ -16,7 +17,8 @@ public sealed class ResetPasswordHandler(
 {
     public async Task<Result<ResetPasswordOutcome>> HandleAsync(ResetPasswordCommand command, CancellationToken cancellationToken)
     {
-        PasswordResetRateLimitDecision decision = await rateLimiter.AcquireVerificationAsync(command.Email, command.ClientIp, cancellationToken);
+        string tokenHash = tokenProtector.HashToken(command.ResetToken);
+        PasswordResetRateLimitDecision decision = await rateLimiter.AcquireResetAsync(tokenHash, command.ClientIp, cancellationToken);
         if (decision == PasswordResetRateLimitDecision.ClientRateLimited)
         {
             return Result<ResetPasswordOutcome>.Failure(Error.PasswordResetRateLimited());
@@ -30,36 +32,26 @@ public sealed class ResetPasswordHandler(
             throw new InvalidOperationException("Unexpected recovery quota decision.");
         }
 
-        PasswordResetSession? session = await challenges.FindForUpdateAsync(command.Email, cancellationToken);
+        PasswordResetTokenSession? session = await resetTokens.FindForUpdateAsync(tokenHash, cancellationToken);
         DateTimeOffset now = timeProvider.GetUtcNow();
-        PasswordResetChallenge? challenge = session?.Challenge;
-        if (session is null || !session.User.IsActive || challenge is null || !challenge.IsUsable(now))
+        if (session is null || !session.User.IsActive || !session.Token.IsUsable(now))
         {
-            return Rejected();
-        }
-
-        if (!codes.Verify(challenge.Id, session.User.Id, command.Code, challenge.CodeMac))
-        {
-            now = timeProvider.GetUtcNow();
-            if (challenge.IsUsable(now))
-            {
-                challenge.RecordFailedAttempt(now);
-            }
             return Rejected();
         }
 
         string newHash = passwordHasher.Hash(command.NewPassword);
         cancellationToken.ThrowIfCancellationRequested();
         now = timeProvider.GetUtcNow();
-        // Password hashing can outlast a code's remaining validity. Check before staging any writes.
-        if (!challenge.IsUsable(now))
+        // Hashing can outlast the authorization's remaining validity.
+        if (!session.Token.IsUsable(now))
         {
             return Rejected();
         }
 
         session.User.ChangePassword(newHash);
-        challenge.Consume(now);
-        await challenges.InvalidateOthersAsync(session.User.Id, challenge.Id, now, cancellationToken);
+        session.Token.Consume(now);
+        await resetTokens.InvalidateOthersAsync(session.User.Id, session.Token.Id, now, cancellationToken);
+        await challenges.InvalidateAllForUserAsync(session.User.Id, now, cancellationToken);
         await refreshTokens.RevokeAllForUserAsync(session.User.Id, now, cancellationToken);
         await otpLoginChallenges.InvalidateAllForUserAsync(session.User.Id, now, cancellationToken);
         emailQueue.Enqueue(new EmailMessage(session.User.Email, "Your BandUp password has changed",
@@ -67,7 +59,7 @@ public sealed class ResetPasswordHandler(
         return Result<ResetPasswordOutcome>.Success(new ResetPasswordOutcome.Completed());
     }
 
-    // A completed rejection commits incorrect-guess counters before the API returns its generic error.
+    // The endpoint maps the outcome only after the command transaction completes.
     private static Result<ResetPasswordOutcome> Rejected() =>
         Result<ResetPasswordOutcome>.Success(new ResetPasswordOutcome.Rejected());
 }

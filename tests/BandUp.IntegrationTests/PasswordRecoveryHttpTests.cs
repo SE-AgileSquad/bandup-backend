@@ -63,7 +63,8 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
         EmailMessage codeEmail = await WaitForEmailAsync(factory, message => message.To == email);
         string code = Regex.Match(codeEmail.TextBody, "[0-9]{6}").Value;
         code.Length.ShouldBe(6);
-        using HttpResponseMessage reset = await browser.PostAsJsonAsync("/api/auth/reset-password", new { email, code, newPassword = NewPassword });
+        string resetToken = await RecoveryTestFlow.VerifyAsync(browser, email, code);
+        using HttpResponseMessage reset = await browser.PostAsJsonAsync("/api/auth/reset-password", new { resetToken, newPassword = NewPassword });
         reset.StatusCode.ShouldBe(HttpStatusCode.NoContent);
         (await reset.Content.ReadAsStringAsync()).ShouldBeEmpty();
         AssertDeletedCookies(reset, settings, secure);
@@ -87,8 +88,8 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
         await AssertProblemAsync(oldLogin, HttpStatusCode.Unauthorized, Error.InvalidCredentialsCode);
         using HttpResponseMessage newLogin = await LoginAsync(browser, email, NewPassword);
         newLogin.StatusCode.ShouldBe(HttpStatusCode.OK);
-        using HttpResponseMessage reused = await browser.PostAsJsonAsync("/api/auth/reset-password", new { email, code, newPassword = OldPassword });
-        await AssertProblemAsync(reused, HttpStatusCode.UnprocessableEntity, Error.InvalidPasswordResetCode);
+        using HttpResponseMessage reused = await browser.PostAsJsonAsync("/api/auth/reset-password", new { resetToken, newPassword = OldPassword });
+        await AssertProblemAsync(reused, HttpStatusCode.UnprocessableEntity, Error.InvalidPasswordResetTokenCode);
         AssertNoCookieChange(reused);
         using HttpResponseMessage stillSignedIn = await browser.GetAsync("/api/auth/me");
         stillSignedIn.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -129,7 +130,8 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
         await AssertAcknowledgementAsync(forgot);
         string code = Regex.Match(await WaitForMailpitAsync(inboxClient, "reset"), "[0-9]{6}").Value;
         code.Length.ShouldBe(6);
-        using HttpResponseMessage reset = await client.PostAsJsonAsync("/api/auth/reset-password", new { email, code, newPassword = NewPassword });
+        string resetToken = await RecoveryTestFlow.VerifyAsync(client, email, code);
+        using HttpResponseMessage reset = await client.PostAsJsonAsync("/api/auth/reset-password", new { resetToken, newPassword = NewPassword });
         reset.StatusCode.ShouldBe(HttpStatusCode.NoContent);
         (await WaitForMailpitAsync(inboxClient, "changed")).ShouldNotContain(NewPassword);
         using HttpResponseMessage login = await LoginAsync(client, email, NewPassword);
@@ -173,7 +175,7 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
         await using BandUpApiFactory factory = Factory();
         Seed seed = await SeedAsync(factory, state);
         using HttpClient client = ManualClient(factory);
-        using HttpRequestMessage request = Post("reset-password", new
+        using HttpRequestMessage request = Post("verify-reset-code", new
         {
             email = state == "unknown" ? $"unknown-{Guid.CreateVersion7():N}@example.com" : seed.User.Email,
             code = state == "wrong" ? "999999" : Code, newPassword = NewPassword,
@@ -196,7 +198,7 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
         using HttpClient client = ManualClient(factory);
         for (int count = 1; count <= 5; count++)
         {
-            using HttpResponseMessage response = await client.PostAsJsonAsync("/api/auth/reset-password", new
+            using HttpResponseMessage response = await client.PostAsJsonAsync("/api/auth/verify-reset-code", new
             {
                 email = seed.User.Email, code = "999999", newPassword = NewPassword,
             });
@@ -204,7 +206,7 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
             await using BandUpDbContext verification = CreateContext();
             (await verification.PasswordResetChallenges.FindAsync(seed.Challenge.Id))!.FailedAttempts.ShouldBe(count);
         }
-        using HttpResponseMessage correctAfterExhaustion = await client.PostAsJsonAsync("/api/auth/reset-password", new
+        using HttpResponseMessage correctAfterExhaustion = await client.PostAsJsonAsync("/api/auth/verify-reset-code", new
         {
             email = seed.User.Email, code = Code, newPassword = NewPassword,
         });
@@ -212,6 +214,8 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
     }
 
     [Theory]
+    [InlineData("verify-reset-code", "bu_at=stale")]
+    [InlineData("verify-reset-code", "bu_rt=stale")]
     [InlineData("forgot-password", "bu_at=stale")]
     [InlineData("forgot-password", "bu_rt=stale")]
     [InlineData("reset-password", "bu_at=stale")]
@@ -228,6 +232,9 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
     }
 
     [Theory]
+    [InlineData("verify-reset-code", "{}", "application/json", 400)]
+    [InlineData("verify-reset-code", "{\"email\":\"valid@example.com\",\"code\":\"012345 \"}", "application/json", 400)]
+    [InlineData("verify-reset-code", "{}", "text/plain", 415)]
     [InlineData("forgot-password", "{}", "application/json", 400)]
     [InlineData("forgot-password", "{\"email\":null}", "application/json", 400)]
     [InlineData("forgot-password", "{\"email\":\"invalid\"}", "application/json", 400)]
@@ -261,6 +268,8 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
     }
 
     [Theory]
+    [InlineData("verify-reset-code", PasswordResetRateLimitDecision.ClientRateLimited, 429)]
+    [InlineData("verify-reset-code", PasswordResetRateLimitDecision.AccountSuppressed, 422)]
     [InlineData("forgot-password", PasswordResetRateLimitDecision.ClientRateLimited, 429)]
     [InlineData("reset-password", PasswordResetRateLimitDecision.ClientRateLimited, 429)]
     [InlineData("forgot-password", PasswordResetRateLimitDecision.AccountSuppressed, 202)]
@@ -279,13 +288,14 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
         }
         else
         {
-            await AssertProblemAsync(response, (HttpStatusCode)status, status == 429 ? Error.PasswordResetRateLimitedCode : Error.InvalidPasswordResetCode);
+            await AssertProblemAsync(response, (HttpStatusCode)status, status == 429 ? Error.PasswordResetRateLimitedCode : route == "reset-password" ? Error.InvalidPasswordResetTokenCode : Error.InvalidPasswordResetCode);
         }
         response.Headers.Contains("Retry-After").ShouldBeFalse();
         AssertNoCookieChange(response);
     }
 
     [Theory]
+    [InlineData("verify-reset-code")]
     [InlineData("forgot-password")]
     [InlineData("reset-password")]
     public async Task AUTH_15_Recovery_Uses_The_Connection_Ip_And_Ignores_Untrusted_Forwarding_And_Body_Ip(string route)
@@ -305,6 +315,8 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
     }
 
     [Theory]
+    [InlineData("verify-reset-code", true)]
+    [InlineData("verify-reset-code", false)]
     [InlineData("forgot-password", true)]
     [InlineData("forgot-password", false)]
     [InlineData("reset-password", true)]
@@ -315,19 +327,23 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
             new FailingUnitOfWork(provider.GetRequiredService<BandUpDbContext>(), failSave)));
         Seed seed = await SeedAsync(factory);
         using HttpClient client = ManualClient(factory);
-        using HttpRequestMessage request = Post(route, new { email = seed.User.Email, code = Code, newPassword = NewPassword }, "bu_rt=existing-session");
+        string? resetToken = route == "reset-password" ? await SeedTokenAsync(factory, seed) : null;
+        using HttpRequestMessage request = Post(route, new { email = seed.User.Email, code = Code, resetToken, newPassword = NewPassword }, "bu_rt=existing-session");
         using HttpResponseMessage response = await client.SendAsync(request);
         await AssertProblemAsync(response, HttpStatusCode.InternalServerError, Error.InternalErrorCode);
         (await response.Content.ReadAsStringAsync()).ShouldNotContain("provider-secret-marker");
         AssertNoCookieChange(response);
         await using BandUpDbContext verification = CreateContext();
         (await verification.Users.FindAsync(seed.User.Id))!.PasswordHash.ShouldBe("unchanged-hash");
-        (await verification.PasswordResetChallenges.FindAsync(seed.Challenge.Id))!.ConsumedAt.ShouldBeNull();
+        var savedChallenge = (await verification.PasswordResetChallenges.FindAsync(seed.Challenge.Id))!;
+        if (route == "reset-password") { savedChallenge.ConsumedAt.ShouldNotBeNull(); }
+        else { savedChallenge.ConsumedAt.ShouldBeNull(); }
         await DrainEmailsAsync(factory);
         factory.Services.GetRequiredService<InMemoryEmailSender>().Messages.Single().Subject.ShouldBe("Barrier");
     }
 
     [Theory]
+    [InlineData("verify-reset-code")]
     [InlineData("forgot-password")]
     [InlineData("reset-password")]
     public async Task AUTH_15_Quota_Outage_Returns_Generic_500_And_Preserves_Cookies(string route)
@@ -375,6 +391,7 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
         foreach ((string route, string success, string[] errors) in new[]
         {
             ("forgot-password", "202", new[] { "400", "415", "429", "500" }),
+            ("verify-reset-code", "200", new[] { "400", "415", "422", "429", "500" }),
             ("reset-password", "204", new[] { "400", "415", "422", "429", "500" }),
         })
         {
@@ -384,10 +401,11 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
             JsonElement schema = operation.GetProperty("requestBody").GetProperty("content").GetProperty("application/json").GetProperty("schema");
             string reference = schema.GetProperty("$ref").GetString()!.Split('/').Last();
             JsonElement properties = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty(reference).GetProperty("properties");
-            properties.GetProperty("email").GetProperty("type").GetString().ShouldBe("string");
+            if (route != "reset-password") { properties.GetProperty("email").GetProperty("type").GetString().ShouldBe("string"); }
+            if (route == "verify-reset-code") { properties.GetProperty("code").GetProperty("type").GetString().ShouldBe("string"); }
             if (route == "reset-password")
             {
-                properties.GetProperty("code").GetProperty("type").GetString().ShouldBe("string");
+                properties.GetProperty("resetToken").GetProperty("type").GetString().ShouldBe("string");
                 properties.GetProperty("newPassword").GetProperty("type").GetString().ShouldBe("string");
             }
             JsonElement responses = operation.GetProperty("responses");
@@ -428,7 +446,7 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
         return client;
     }
 
-    private static object ValidBody() => new { email = "valid@example.com", code = Code, newPassword = NewPassword, clientIp = "198.51.100.2" };
+    private static object ValidBody() => new { email = "valid@example.com", code = Code, resetToken = new string('A', 43), newPassword = NewPassword, clientIp = "198.51.100.2" };
 
     private static HttpRequestMessage Post(string route, object body, string? cookie = null, bool csrf = true)
     {
@@ -461,6 +479,19 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
         if (state != "missing") { context.PasswordResetChallenges.Add(challenge); }
         await context.SaveChangesAsync();
         return new Seed(user, challenge);
+    }
+
+    private async Task<string> SeedTokenAsync(BandUpApiFactory factory, Seed seed)
+    {
+        DateTimeOffset now = TimeProvider.System.GetUtcNow();
+        string raw = factory.Services.GetRequiredService<IPasswordResetTokenProtector>().GenerateToken();
+        await using BandUpDbContext db = CreateContext();
+        var challenge = (await db.PasswordResetChallenges.FindAsync(seed.Challenge.Id))!;
+        challenge.Consume(now);
+        db.PasswordResetTokens.Add(PasswordResetToken.Issue(challenge,
+            factory.Services.GetRequiredService<IPasswordResetTokenProtector>().HashToken(raw), now, now.AddMinutes(5)));
+        await db.SaveChangesAsync();
+        return raw;
     }
 
     private BandUpDbContext CreateContext() => BandUpTestEnvironment.CreateContext(environment.MigratedConnectionString);
@@ -563,6 +594,7 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
         public string? LastIp { get; private set; }
         public Task<PasswordResetRateLimitDecision> AcquireRequestAsync(string email, string? clientIp, CancellationToken cancellationToken) => AcquireAsync(clientIp);
         public Task<PasswordResetRateLimitDecision> AcquireVerificationAsync(string email, string? clientIp, CancellationToken cancellationToken) => AcquireAsync(clientIp);
+        public Task<PasswordResetRateLimitDecision> AcquireResetAsync(string tokenHash, string? clientIp, CancellationToken cancellationToken) => AcquireAsync(clientIp);
         private Task<PasswordResetRateLimitDecision> AcquireAsync(string? ip)
         {
             LastIp = ip;

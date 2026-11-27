@@ -11,10 +11,23 @@ public sealed class WritingDomainTests
 
     private static WritingPrompt Prompt()
     {
-        WritingPrompt prompt = new(Guid.NewGuid(), "Cities", "Discuss urban growth.", Now);
-        prompt.Approve(Now);
-        prompt.Activate(Now);
+        var prompt = Draft();
+        prompt.Publish(Now);
         return prompt;
+    }
+
+    private static WritingPrompt Draft() =>
+        WritingPrompt.CreateDraft("Cities", "Discuss urban growth.", "Opinion", 100, 350, Guid.NewGuid(), Now);
+
+    [Theory]
+    [InlineData("MinWords", 99)]
+    [InlineData("MaxWords", 351)]
+    public void LegacyPublishedBoundsCannotAuthorizeAcceptance(string property, int value)
+    {
+        var prompt = Prompt();
+        // Represent a row published under the previous catalog policy.
+        typeof(WritingPrompt).GetProperty(property)!.SetValue(prompt, value);
+        Assert.Throws<DomainException>(() => Accept(prompt, Essay));
     }
 
     private static WritingSubmission Accept(WritingPrompt prompt, string essay) =>
@@ -29,22 +42,43 @@ public sealed class WritingDomainTests
     [Fact]
     public void PromptEligibilityAndSnapshotAreIndependentAfterAcceptance()
     {
-        Assert.Throws<DomainException>(() => new WritingPrompt(Guid.Empty, "Title", "Text", Now));
-        Assert.Throws<DomainException>(() => new WritingPrompt(Guid.NewGuid(), " ", "Text", Now));
-        Assert.Throws<DomainException>(() => new WritingPrompt(Guid.NewGuid(), "Title", "", Now));
-        var prompt = new WritingPrompt(Guid.NewGuid(), "Cities", "Discuss urban growth.", Now);
-        Assert.Throws<DomainException>(() => prompt.Activate(Now));
-        prompt.Approve(Now);
+        Assert.Throws<DomainException>(() => WritingPrompt.CreateDraft("Title", "Text", "Opinion", 100, 350, Guid.Empty, Now));
+        Assert.Throws<DomainException>(() => WritingPrompt.CreateDraft(" ", "Text", "Opinion", 100, 350, Guid.NewGuid(), Now));
+        Assert.Throws<DomainException>(() => WritingPrompt.CreateDraft("Title", "", "Opinion", 100, 350, Guid.NewGuid(), Now));
+        var prompt = Draft();
         Assert.Throws<DomainException>(() => Accept(prompt, Essay));
-        prompt.Activate(Now);
+        prompt.Publish(Now);
         var submission = Accept(prompt, Essay);
-        prompt.Retire(Now);
+        prompt.Archive(Now.AddDays(1));
         Assert.Throws<DomainException>(() => Accept(prompt, Essay));
-        Assert.Equal(new WritingPromptSnapshot(prompt.Id, prompt.Title, prompt.PromptText), submission.PromptSnapshot);
+        Assert.Equal(new WritingPromptSnapshot(prompt.Id, prompt.Title, prompt.TaskText), submission.PromptSnapshot);
         Assert.Equal(Essay, submission.EssayText);
         Assert.True(submission.MatchesPayload(prompt.Id, Essay));
         Assert.False(submission.MatchesPayload(prompt.Id, Essay.Normalize()));
         Assert.False(submission.MatchesPayload(Guid.NewGuid(), Essay));
+    }
+
+    [Fact]
+    public void SubmissionCannotBeAcceptedBeforePromptPublication()
+    {
+        var prompt = Draft();
+        var publishedAt = Now.AddMinutes(1);
+        prompt.Publish(publishedAt);
+
+        Assert.Throws<DomainException>(() => new WritingSubmission(
+            Guid.NewGuid(), Guid.NewGuid(), prompt, Essay, publishedAt.AddTicks(-1), Deadline));
+    }
+
+    [Fact]
+    public void SubmissionCanBeAcceptedAtPromptPublication()
+    {
+        var prompt = Draft();
+        var publishedAt = Now.AddMinutes(1);
+        prompt.Publish(publishedAt);
+
+        var submission = new WritingSubmission(Guid.NewGuid(), Guid.NewGuid(), prompt, Essay, publishedAt, Deadline);
+
+        Assert.Equal(publishedAt, submission.SubmittedAt);
     }
 
     [Fact]

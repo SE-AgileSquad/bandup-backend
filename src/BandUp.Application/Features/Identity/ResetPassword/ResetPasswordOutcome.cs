@@ -12,6 +12,6 @@ public abstract record ResetPasswordOutcome
 
     public sealed record Completed : ResetPasswordOutcome;
 
-    /// <summary>Maps to INVALID_PASSWORD_RESET_CODE after the attempt state has committed.</summary>
+    /// <summary>Maps to INVALID_PASSWORD_RESET_TOKEN after the transaction completes.</summary>
     public sealed record Rejected : ResetPasswordOutcome;
 }

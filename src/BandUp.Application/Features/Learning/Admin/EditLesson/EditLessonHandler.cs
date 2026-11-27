@@ -1,5 +1,6 @@
 using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
+using BandUp.Domain.Common;
 using BandUp.Domain.Learning;
 
 namespace BandUp.Application.Features.Learning.Admin.EditLesson;
@@ -16,7 +17,21 @@ public sealed class EditLessonHandler(IAdminLessonStore store)
         }
 
         LessonEditInput input = command.Input;
-        lesson.Edit(input.Title, input.Body, input.SortOrder);
-        return Result<bool>.Success(true);
+        if (input.QuestionType is { } type && type != lesson.QuestionType
+            && await store.HasMappingsAsync(lesson.Id, cancellationToken))
+        {
+            return Result<bool>.Failure(Error.Conflict("The question type cannot be changed while the lesson has mappings.")
+                with { ValidationErrors = new Dictionary<string, string[]> { ["questionType"] = ["The lesson has existing mappings."] } });
+        }
+
+        try
+        {
+            lesson.Edit(input.Title, input.Body, input.SortOrder, input.QuestionType);
+            return Result<bool>.Success(true);
+        }
+        catch (DomainException exception)
+        {
+            return Result<bool>.Failure(Error.Conflict(exception.Message));
+        }
     }
 }
