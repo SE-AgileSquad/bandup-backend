@@ -37,6 +37,7 @@ Tests live in `tests/`: unit, architecture, and integration (Testcontainers).
 | [docs/auth-client-contract.md](docs/auth-client-contract.md) | you are integrating browser session refresh and logout |
 | [docs/auth-session-acceptance.md](docs/auth-session-acceptance.md) | you want the auth acceptance coverage and concurrency limits |
 | [docs/admin-users-api.md](docs/admin-users-api.md) | you are connecting the super-admin Users page |
+| [docs/admin-dashboard-api.md](docs/admin-dashboard-api.md) | you are connecting the Admin home counters |
 | [infra/README.md](infra/README.md) | you want to deploy, or change Docker/Nginx/CI/CD |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | you are about to branch, commit, or open a PR |
 

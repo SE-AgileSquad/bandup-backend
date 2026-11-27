@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using BandUp.Application.Abstractions;
 using BandUp.Application.Features.Identity;
+using BandUp.Application.Features.Dashboard.Admin;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -22,6 +23,7 @@ public sealed class AdminContentRequestTests
     [InlineData("/api/admin/passages")]
     [InlineData("/api/admin/lessons")]
     [InlineData("/api/admin/users")]
+    [InlineData("/api/admin/dashboard")]
     public async Task Admin_Lists_Reject_Anonymous_And_Ordinary_Users(string path)
     {
         await using AuthorizationApiFactory factory = new();
@@ -151,7 +153,35 @@ public sealed class AdminContentRequestTests
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
-    private sealed class AuthorizationApiFactory(Guid? adminId = null, bool superAdmin = true, bool active = true)
+    [Theory]
+    [InlineData(false, 24, 6, 18, 128)]
+    [InlineData(true, 24, 6, 18, 128)]
+    [InlineData(false, 0, 0, 0, 0)]
+    public async Task Both_Admin_Roles_Can_Read_All_Four_Dashboard_Counters(
+        bool superAdmin, int published, int drafts, int lessons, int users)
+    {
+        Guid actorId = Guid.CreateVersion7();
+        AdminDashboardDto expected = new(published, drafts, lessons, users);
+        await using AuthorizationApiFactory factory = new(actorId, superAdmin, dashboard: expected);
+        using HttpClient client = factory.CreateClient();
+        AccessToken token = factory.Services.GetRequiredService<ITokenService>()
+            .CreateAccessToken(actorId, superAdmin ? "SuperAdmin" : "Admin", TimeProvider.System.GetUtcNow());
+        using HttpRequestMessage request = new(HttpMethod.Get, "/api/admin/dashboard");
+        request.Headers.Add("Cookie", $"bu_at={token.Value}");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using JsonDocument document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        JsonElement body = document.RootElement;
+        body.GetProperty("publishedPassages").GetInt32().ShouldBe(expected.PublishedPassages);
+        body.GetProperty("draftPassages").GetInt32().ShouldBe(expected.DraftPassages);
+        body.GetProperty("totalLessons").GetInt32().ShouldBe(expected.TotalLessons);
+        body.GetProperty("totalUsers").GetInt32().ShouldBe(users);
+        body.EnumerateObject().Count().ShouldBe(4);
+    }
+
+    private sealed class AuthorizationApiFactory(
+        Guid? adminId = null, bool superAdmin = true, bool active = true, AdminDashboardDto? dashboard = null)
         : WebApplicationFactory<Program>
     {
         protected override IHost CreateHost(IHostBuilder builder)
@@ -189,6 +219,11 @@ public sealed class AdminContentRequestTests
                     .Returns(call => superAdmin && call.ArgAt<Guid>(0) == adminId);
                 services.RemoveAll<IUserRepository>();
                 services.AddSingleton(users);
+                IAdminDashboardQueries dashboardQueries = Substitute.For<IAdminDashboardQueries>();
+                dashboardQueries.GetAsync(Arg.Any<CancellationToken>())
+                    .Returns(dashboard ?? new AdminDashboardDto(0, 0, 0, 0));
+                services.RemoveAll<IAdminDashboardQueries>();
+                services.AddSingleton(dashboardQueries);
             });
         }
     }
