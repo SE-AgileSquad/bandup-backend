@@ -4,4 +4,5 @@ public enum LessonStatus
 {
     Draft,
     Published,
+    Archived,
 }

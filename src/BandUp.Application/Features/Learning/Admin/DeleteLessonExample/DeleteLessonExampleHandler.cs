@@ -15,6 +15,11 @@ public sealed class DeleteLessonExampleHandler(IAdminLessonStore store)
             return Result<bool>.Failure(Error.NotFound("Example not found in this lesson."));
         }
 
+        if (lesson.Status == LessonStatus.Archived)
+        {
+            return Result<bool>.Failure(Error.Conflict("An archived lesson is read-only."));
+        }
+
         if (lesson.Status == LessonStatus.Published && lesson.Examples.Count == 1)
         {
             return Result<bool>.Failure(Error.Conflict("A published lesson must retain at least one example."));

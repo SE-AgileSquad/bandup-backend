@@ -21,6 +21,13 @@ public sealed class PublishLessonHandler(IAdminLessonStore store)
             return Result<bool>.Success(true);
         }
 
+        LessonPublicationReadiness readiness = LessonPublicationReadiness.FromIssues(lesson.GetPublicationIssues());
+        if (!readiness.IsReady)
+        {
+            return Result<bool>.Failure(Error.Conflict("The lesson is not ready for publication.")
+                with { ValidationErrors = readiness.Errors });
+        }
+
         try
         {
             lesson.Publish();

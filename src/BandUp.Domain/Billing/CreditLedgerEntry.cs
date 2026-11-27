@@ -44,7 +44,7 @@ public sealed class CreditLedgerEntry : Entity
 
     public string Reason { get; private set; } = null!;
 
-    /// <summary>The submission id for a charge or refund; null otherwise.</summary>
+    /// <summary>The submission ID for writing movements or request ID for an admin adjustment.</summary>
     public Guid? ReferenceId { get; private set; }
 
     public Guid? CreatedByAdminId { get; private set; }

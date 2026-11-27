@@ -26,6 +26,84 @@ public sealed class LessonDomainTests
         example.SortOrder.ShouldBe(2);
     }
 
+    [Fact]
+    public void Archiving_Requires_Publication_And_Preserves_Content()
+    {
+        Lesson lesson = CreateLesson();
+        Should.Throw<DomainException>(() => lesson.Archive());
+        lesson.Status.ShouldBe(LessonStatus.Draft);
+        LessonExample example = lesson.AddExample("The birds build nests.", "Nest building", 1);
+        lesson.Publish();
+
+        lesson.Archive();
+
+        lesson.Status.ShouldBe(LessonStatus.Archived);
+        lesson.Title.ShouldBe("False vs Not Given");
+        lesson.Examples.Single().ShouldBeSameAs(example);
+        Should.Throw<DomainException>(() => lesson.Publish());
+    }
+
+    [Fact]
+    public void A_Draft_Can_Change_Question_Type_But_A_Published_Lesson_Keeps_Its_Type()
+    {
+        Lesson lesson = CreateLesson();
+        lesson.Edit("Completion", "Use the text.", 2, QuestionType.SentenceCompletion);
+        lesson.QuestionType.ShouldBe(QuestionType.SentenceCompletion);
+        lesson.AddExample("Birds build nests.", "Nest building", 1);
+        lesson.Publish();
+
+        Should.Throw<DomainException>(() => lesson.Edit("Bad edit", "New body", 3, QuestionType.TrueFalseNotGiven));
+        lesson.Title.ShouldBe("Completion");
+        lesson.SortOrder.ShouldBe(2);
+        lesson.Edit("Updated", "Updated body", 3);
+        lesson.QuestionType.ShouldBe(QuestionType.SentenceCompletion);
+        lesson.Title.ShouldBe("Updated");
+    }
+
+    [Fact]
+    public void Archived_Lesson_Content_And_Examples_Are_Read_Only()
+    {
+        Lesson lesson = CreateLesson();
+        LessonExample example = lesson.AddExample("Birds build nests.", "Nest building", 1);
+        lesson.Publish();
+        lesson.Archive();
+
+        Should.Throw<DomainException>(() => lesson.Edit("Changed", "Body", 2));
+        Should.Throw<DomainException>(() => lesson.AddExample("New evidence", "New paraphrase", 2));
+        Should.Throw<DomainException>(() => lesson.EditExample(example.Id, "Changed", "Changed", 2));
+        Should.Throw<DomainException>(() => lesson.ReorderExamples([example.Id]));
+        example.EvidenceSentence.ShouldBe("Birds build nests.");
+        example.SortOrder.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Reordering_Examples_Validates_All_Ids_Before_Changing_Any_Order()
+    {
+        Lesson lesson = CreateLesson();
+        LessonExample first = lesson.AddExample("First", "First paraphrase", 10);
+        LessonExample second = lesson.AddExample("Second", "Second paraphrase", 20);
+        Should.Throw<DomainException>(() => lesson.ReorderExamples([second.Id, Guid.NewGuid()]));
+        Should.Throw<DomainException>(() => lesson.ReorderExamples([second.Id, second.Id]));
+        Should.Throw<DomainException>(() => lesson.ReorderExamples([second.Id]));
+        first.SortOrder.ShouldBe(10);
+        second.SortOrder.ShouldBe(20);
+
+        lesson.ReorderExamples([second.Id, first.Id]);
+        second.SortOrder.ShouldBe(1);
+        first.SortOrder.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Publication_Readiness_Tracks_Examples_And_The_Lesson_Status()
+    {
+        Lesson lesson = CreateLesson();
+        lesson.GetPublicationIssues().Single().Field.ShouldBe("examples");
+        lesson.AddExample("Evidence", "Paraphrase", 1);
+        lesson.GetPublicationIssues().ShouldBeEmpty();
+        lesson.Publish();
+        lesson.GetPublicationIssues().Single().Field.ShouldBe("status");
+    }
+
     [Theory]
     [InlineData("", "paraphrase")]
     [InlineData("evidence", " ")]

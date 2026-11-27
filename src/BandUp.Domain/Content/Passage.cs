@@ -19,6 +19,7 @@ public sealed class Passage : Entity
     public Guid? PreviousVersionId { get; private set; }
     public Guid CreatedBy { get; private set; }
     public DateTimeOffset? PublishedAt { get; private set; }
+    public DateTimeOffset? UpdatedAt { get; private set; }
     public IReadOnlyList<Question> Questions => _questions.AsReadOnly();
 
     public static Passage CreateDraft(
@@ -75,14 +76,10 @@ public sealed class Passage : Entity
     {
         EnsureDraft();
 
-        if (_questions.Count == 0)
+        PublicationIssue? issue = GetPublicationIssues().FirstOrDefault();
+        if (issue is not null)
         {
-            throw new DomainException("A passage must have at least one question to be published.");
-        }
-
-        foreach (Question question in _questions)
-        {
-            question.EnsurePublishable();
+            throw new DomainException(issue.Message);
         }
 
         foreach (Question question in _questions)
@@ -92,6 +89,27 @@ public sealed class Passage : Entity
 
         Status = PassageStatus.Published;
         PublishedAt = publishedAt;
+    }
+
+    public IReadOnlyList<PublicationIssue> GetPublicationIssues()
+    {
+        List<PublicationIssue> issues = [];
+        if (Status != PassageStatus.Draft)
+        {
+            issues.Add(new("status", "Only a draft passage can be published."));
+        }
+
+        if (_questions.Count == 0)
+        {
+            issues.Add(new("questions", "A passage must have at least one question to be published."));
+        }
+
+        foreach (Question question in _questions)
+        {
+            issues.AddRange(question.GetPublicationIssues());
+        }
+
+        return issues;
     }
 
     public void Archive()
