@@ -169,16 +169,22 @@ public static class ApiConfiguration
 
         app.Use(async (context, next) =>
         {
-            if (context.GetEndpoint()?.Metadata.GetMetadata<PrivateWritingResponse>() is null)
+            if (context.GetEndpoint()?.Metadata.GetMetadata<PrivateWritingResponse>() is null &&
+                !context.Request.Path.StartsWithSegments("/api/writing"))
             {
                 await next(context);
                 return;
             }
 
             // Cover authentication, data access and exception handling with the same privacy boundary.
+            using var privacy = WritingTelemetryBoundary.Enter();
             using var logScope = LogContext.PushProperty(BandUpLogProperties.PrivateWritingRequest, true);
             using var telemetryScope = SentrySdk.PushScope();
-            SentrySdk.ConfigureScope(scope => scope.SetTag(BandUpLogProperties.PrivateWritingRequest, "true"));
+            SentrySdk.ConfigureScope(scope =>
+            {
+                scope.SetTag(BandUpLogProperties.PrivateWritingRequest, "true");
+                scope.Transaction?.SetTag(BandUpLogProperties.PrivateWritingRequest, "true");
+            });
             context.Response.OnStarting(() =>
             {
                 context.Response.Headers.CacheControl = "no-store";

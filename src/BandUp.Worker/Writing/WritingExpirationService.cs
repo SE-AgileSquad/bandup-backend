@@ -35,9 +35,14 @@ public sealed class WritingExpirationService(
 
     private async Task ExpireBatchAsync(int batchSize, CancellationToken ct)
     {
+        using var privacy = WritingTelemetryBoundary.Enter();
         using var logScope = LogContext.PushProperty(BandUpLogProperties.PrivateWritingExpiration, true);
         using var telemetryScope = SentrySdk.PushScope();
-        SentrySdk.ConfigureScope(scope => scope.SetTag(BandUpLogProperties.PrivateWritingExpiration, "true"));
+        SentrySdk.ConfigureScope(scope =>
+        {
+            scope.SetTag(BandUpLogProperties.PrivateWritingExpiration, "true");
+            scope.Transaction?.SetTag(BandUpLogProperties.PrivateWritingExpiration, "true");
+        });
         IReadOnlyList<WritingExpirationCandidate> candidates;
         try
         {

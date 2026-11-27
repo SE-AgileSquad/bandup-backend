@@ -40,9 +40,14 @@ public sealed class WritingBackgroundPublisher(
 
     private async Task RunCycleAsync(WritingPublishingOptions settings, CancellationToken stoppingToken)
     {
+        using var privacy = WritingTelemetryBoundary.Enter();
         using var logScope = LogContext.PushProperty(BandUpLogProperties.PrivateWritingPublication, true);
         using var telemetryScope = SentrySdk.PushScope();
-        SentrySdk.ConfigureScope(scope => scope.SetTag(BandUpLogProperties.PrivateWritingPublication, "true"));
+        SentrySdk.ConfigureScope(scope =>
+        {
+            scope.SetTag(BandUpLogProperties.PrivateWritingPublication, "true");
+            scope.Transaction?.SetTag(BandUpLogProperties.PrivateWritingPublication, "true");
+        });
         if (broker is not null)
         {
             // Do not spend attempts when the broker is already known to be unavailable.

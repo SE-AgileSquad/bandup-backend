@@ -25,29 +25,33 @@ builder.Services.AddSerilog(
     BandUpLoggerConfiguration.Create(BandUpLoggerConfiguration.Api, builder.Configuration),
     dispose: true);
 
-string? sentryDsn = builder.Configuration["Sentry:Dsn"];
-
-if (!string.IsNullOrWhiteSpace(sentryDsn))
+builder.WebHost.UseSentry((WebHostBuilderContext context, Sentry.AspNetCore.SentryAspNetCoreOptions options) =>
 {
-    builder.WebHost.UseSentry(options =>
+    options.Dsn = context.Configuration["Sentry:Dsn"] ?? string.Empty;
+    options.Environment = context.HostingEnvironment.EnvironmentName;
+    options.SendDefaultPii = false;
+    options.IsGlobalModeEnabled = false;
+    options.MaxRequestBodySize = Sentry.Extensibility.RequestSize.None;
+    options.AutoSessionTracking = false;
+    options.SetBeforeBreadcrumb(crumb => WritingTelemetryBoundary.IsPrivate ||
+        (crumb.Data?.Values.Any(WritingTelemetryBoundary.IsWritingUrl) ?? false) ? null : crumb);
+    options.SetBeforeSendLog(entry => WritingTelemetryBoundary.IsPrivate ? null : entry);
+    options.SetBeforeSendMetric(metric => WritingTelemetryBoundary.IsPrivate ? null : metric);
+    options.SetBeforeSendTransaction(transaction =>
+        WritingTelemetryBoundary.IsPrivate || WritingTelemetryBoundary.HasPrivateTag(transaction.Tags) ||
+        WritingTelemetryBoundary.IsWritingUrl(transaction.Request?.Url) ? null : transaction);
+    options.SetBeforeSend((@event, _) =>
     {
-        options.Dsn = sentryDsn;
-        options.Environment = builder.Environment.EnvironmentName;
-        options.SendDefaultPii = false;
-        options.MaxRequestBodySize = Sentry.Extensibility.RequestSize.None;
-        options.AutoSessionTracking = false;
-        options.SetBeforeSend((@event, _) =>
+        // The ASP.NET integration can capture after the endpoint's private scope has unwound.
+        if (WritingTelemetryBoundary.IsPrivate || WritingTelemetryBoundary.HasPrivateTag(@event.Tags) ||
+            WritingTelemetryBoundary.IsWritingUrl(@event.Request?.Url))
         {
-            // Writing retains sanitized application logs without sending private diagnostics.
-            if (@event.Tags.ContainsKey(BandUpLogProperties.PrivateWritingRequest))
-            {
-                return null;
-            }
-            @event.SetTag("service", BandUpLoggerConfiguration.Api);
-            return @event;
-        });
+            return null;
+        }
+        @event.SetTag("service", BandUpLoggerConfiguration.Api);
+        return @event;
     });
-}
+});
 
 builder.Services
     .AddApplication()
