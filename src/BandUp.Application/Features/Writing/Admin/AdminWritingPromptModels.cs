@@ -3,7 +3,8 @@ using BandUp.Domain.Writing;
 namespace BandUp.Application.Features.Writing.Admin;
 
 public sealed record WritingPromptInput(
-    string Title, string TaskText, string EssayType = "Opinion essay", int MinWords = 100, int MaxWords = 350);
+    string Title, string TaskText, string EssayType = "Opinion essay",
+    int MinWords = WritingPrompt.WritingMinWords, int MaxWords = WritingPrompt.WritingMaxWords);
 
 public sealed record WritingPromptSummary(
     Guid Id, string Title, string EssayType, int MinWords, int MaxWords, WritingPromptStatus Status,
