@@ -1,5 +1,6 @@
 using BandUp.Api.Auth;
 using BandUp.Api.Errors;
+using BandUp.Api.Endpoints.Writing;
 using BandUp.Api.Health;
 using BandUp.Api.Middleware;
 using BandUp.Application.Abstractions;
@@ -28,6 +29,7 @@ public static class ApiConfiguration
         "Authorization",
         "X-Request-Id",
         "X-Requested-With",
+        "Idempotency-Key",
     ];
 
     public static IServiceCollection AddApiConfiguration(
@@ -87,7 +89,8 @@ public static class ApiConfiguration
                     .WithOrigins(origin)
                     .AllowCredentials()
                     .WithMethods(AllowedMethods)
-                    .WithHeaders(AllowedHeaders);
+                    .WithHeaders(AllowedHeaders)
+                    .WithExposedHeaders("Location");
             }
         }));
 
@@ -153,6 +156,19 @@ public static class ApiConfiguration
         app.UseExceptionHandler();
         app.UseMiddleware<RequestIdMiddleware>();
         app.UseMiddleware<RequestLoggingMiddleware>();
+        app.Use(async (context, next) =>
+        {
+            // Register before authentication and CSRF so their failures also stay out of caches.
+            if (context.GetEndpoint()?.Metadata.GetMetadata<PrivateWritingResponse>() is not null)
+            {
+                context.Response.OnStarting(() =>
+                {
+                    context.Response.Headers.CacheControl = "no-store";
+                    return Task.CompletedTask;
+                });
+            }
+            await next(context);
+        });
         app.UseCors(CorsPolicy);
         app.UseAuthentication();
         app.UseAuthorization();

@@ -1,4 +1,5 @@
 using BandUp.Application.Abstractions;
+using BandUp.Application.Features.Writing.SubmitWritingEssay;
 using BandUp.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -19,6 +20,18 @@ public sealed class EfUnitOfWork(BandUpDbContext context) : IUnitOfWork
         catch (Exception exception)
         {
             await AbandonAfterFailureAsync(exception);
+            // Only a save-time violation after successful transaction disposal is safe to recover.
+            if (!exception.Data.Contains("TransactionCleanup") &&
+                exception is DbUpdateException { InnerException: PostgresException
+                {
+                    SqlState: PostgresErrorCodes.UniqueViolation,
+                    SchemaName: "writing",
+                    TableName: "writing_submissions",
+                    ConstraintName: "ix_writing_submissions_user_id_idempotency_key"
+                } })
+            {
+                throw new WritingSubmissionKeyConflictException(exception);
+            }
             if (exception is DbUpdateException update && IsUniqueViolation(update))
             {
                 throw new DuplicateEntityException("A record with the same unique value already exists.", update);

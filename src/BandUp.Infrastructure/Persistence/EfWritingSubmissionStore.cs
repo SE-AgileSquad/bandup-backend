@@ -8,6 +8,22 @@ namespace BandUp.Infrastructure.Persistence;
 
 internal sealed class EfWritingSubmissionStore(BandUpDbContext context) : IWritingSubmissionStore, IWritingMutationWriter
 {
+    public async Task<WritingPromptListDto> ListEligiblePromptsAsync(CancellationToken cancellationToken)
+    {
+        var published = context.WritingPrompts.AsNoTracking()
+            .Where(prompt => prompt.Status == WritingPromptStatus.Published)
+            .OrderBy(prompt => prompt.Id).AsAsyncEnumerable();
+        List<WritingPromptDto> items = [];
+        await foreach (var prompt in published.WithCancellation(cancellationToken))
+        {
+            if (prompt.IsEligibleForSubmission())
+            {
+                items.Add(new(prompt.Id, prompt.Title, prompt.TaskText));
+            }
+        }
+        return new(items);
+    }
+
     public async Task<WritingPrompt?> FindEligiblePromptAsync(Guid promptId, CancellationToken cancellationToken)
     {
         // Read the locked database version even if this scope previously tracked an older draft.

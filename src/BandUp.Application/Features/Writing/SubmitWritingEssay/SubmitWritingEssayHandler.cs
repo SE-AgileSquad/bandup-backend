@@ -20,7 +20,7 @@ internal sealed class SubmitWritingEssayHandler(ICurrentUser currentUser, IWriti
         var existing = await store.FindByKeyAsync(owner, command.IdempotencyKey, cancellationToken);
         if (existing is not null)
         {
-            return Replay(existing, command);
+            return WritingSubmissionReplay.Compare(existing, command);
         }
 
         // At Read Committed a waiter sees the winning command only after acquiring the account lock.
@@ -28,7 +28,7 @@ internal sealed class SubmitWritingEssayHandler(ICurrentUser currentUser, IWriti
         existing = await store.FindByKeyAsync(owner, command.IdempotencyKey, cancellationToken);
         if (existing is not null)
         {
-            return Replay(existing, command);
+            return WritingSubmissionReplay.Compare(existing, command);
         }
 
         if (!EssayPolicy.IsValid(command.EssayText))
@@ -61,15 +61,6 @@ internal sealed class SubmitWritingEssayHandler(ICurrentUser currentUser, IWriti
             return Result<WritingSubmissionAcceptedDto>.Failure(debit.Error!);
         }
         await mutationWriter.AddAcceptedSubmissionAsync(submission, cancellationToken);
-        return Receipt(submission);
+        return WritingSubmissionReplay.Receipt(submission);
     }
-
-    private static Result<WritingSubmissionAcceptedDto> Replay(WritingSubmission submission, SubmitWritingEssayCommand command) =>
-        submission.MatchesPayload(command.PromptId, command.EssayText)
-            ? Receipt(submission)
-            : Result<WritingSubmissionAcceptedDto>.Failure(new Error(WritingErrorCodes.IdempotencyConflict,
-                "The idempotency key was accepted with a different payload.", ErrorType.Conflict));
-
-    private static Result<WritingSubmissionAcceptedDto> Receipt(WritingSubmission submission) =>
-        Result<WritingSubmissionAcceptedDto>.Success(new(submission.Id, submission.SubmittedAt));
 }
