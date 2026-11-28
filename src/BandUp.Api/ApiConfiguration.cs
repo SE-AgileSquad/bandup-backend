@@ -1,13 +1,17 @@
 using BandUp.Api.Auth;
 using BandUp.Api.Errors;
+using BandUp.Api.Endpoints.Writing;
 using BandUp.Api.Health;
 using BandUp.Api.Middleware;
 using BandUp.Application.Abstractions;
 using BandUp.Infrastructure;
 using BandUp.Infrastructure.Configuration;
+using BandUp.Infrastructure.Logging;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
+using Sentry;
+using Serilog.Context;
 
 namespace BandUp.Api;
 
@@ -28,6 +32,7 @@ public static class ApiConfiguration
         "Authorization",
         "X-Request-Id",
         "X-Requested-With",
+        "Idempotency-Key",
     ];
 
     public static IServiceCollection AddApiConfiguration(
@@ -87,7 +92,8 @@ public static class ApiConfiguration
                     .WithOrigins(origin)
                     .AllowCredentials()
                     .WithMethods(AllowedMethods)
-                    .WithHeaders(AllowedHeaders);
+                    .WithHeaders(AllowedHeaders)
+                    .WithExposedHeaders("Location");
             }
         }));
 
@@ -102,12 +108,23 @@ public static class ApiConfiguration
         });
 
         services.AddEndpointsApiExplorer();
-        services.AddSwaggerGen(options => options.SwaggerDoc("v1", new OpenApiInfo
+        services.AddSwaggerGen(options =>
         {
-            Title = "BandUp API",
-            Version = "v1",
-            Description = "IELTS Reading and Writing preparation platform.",
-        }));
+            options.SwaggerDoc("v1", new OpenApiInfo
+            {
+                Title = "BandUp API",
+                Version = "v1",
+                Description = "IELTS Reading and Writing preparation platform.",
+            });
+            options.AddSecurityDefinition(WritingOpenApiFilter.SessionScheme, new OpenApiSecurityScheme
+            {
+                Type = SecuritySchemeType.ApiKey,
+                In = ParameterLocation.Cookie,
+                Name = configuration[$"{AuthSettings.SectionName}:AccessCookieName"] ?? new AuthSettings().AccessCookieName,
+                Description = "Access cookie issued by the existing BandUp sign-in flow.",
+            });
+            options.OperationFilter<WritingOpenApiFilter>();
+        });
 
         services.AddProblemDetails();
         services.AddExceptionHandler<BandUpExceptionHandler>();
@@ -150,6 +167,31 @@ public static class ApiConfiguration
             app.UseForwardedHeaders();
         }
 
+        app.Use(async (context, next) =>
+        {
+            if (context.GetEndpoint()?.Metadata.GetMetadata<PrivateWritingResponse>() is null &&
+                !context.Request.Path.StartsWithSegments("/api/writing"))
+            {
+                await next(context);
+                return;
+            }
+
+            // Cover authentication, data access and exception handling with the same privacy boundary.
+            using var privacy = WritingTelemetryBoundary.Enter();
+            using var logScope = LogContext.PushProperty(BandUpLogProperties.PrivateWritingRequest, true);
+            using var telemetryScope = SentrySdk.PushScope();
+            SentrySdk.ConfigureScope(scope =>
+            {
+                scope.SetTag(BandUpLogProperties.PrivateWritingRequest, "true");
+                scope.Transaction?.SetTag(BandUpLogProperties.PrivateWritingRequest, "true");
+            });
+            context.Response.OnStarting(() =>
+            {
+                context.Response.Headers.CacheControl = "no-store";
+                return Task.CompletedTask;
+            });
+            await next(context);
+        });
         app.UseExceptionHandler();
         app.UseMiddleware<RequestIdMiddleware>();
         app.UseMiddleware<RequestLoggingMiddleware>();

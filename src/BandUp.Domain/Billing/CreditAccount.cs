@@ -22,6 +22,9 @@ public sealed class CreditAccount : Entity
 
     public int Balance { get; private set; }
 
+    /// <summary>Balance headroom held for outstanding Writing refunds.</summary>
+    public int ReservedRefundCapacity { get; private set; }
+
     public DateTimeOffset CreatedAt { get; private set; }
 
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -50,6 +53,22 @@ public sealed class CreditAccount : Entity
         Guid? createdByAdminId = null,
         string? note = null)
     {
+        if (reason is CreditLedgerEntry.WritingChargeReason or CreditLedgerEntry.WritingRefundReason)
+        {
+            throw new DomainException("Writing transactions require atomic acceptance or settlement.");
+        }
+        return ApplyTransaction(amount, deltaType, reason, now, referenceId, createdByAdminId, note);
+    }
+
+    internal CreditLedgerEntry RecordWritingCharge(Guid submissionId, DateTimeOffset now) =>
+        ApplyTransaction(1, CreditDelta.Charge, CreditLedgerEntry.WritingChargeReason, now, submissionId, null, null);
+
+    internal CreditLedgerEntry RecordWritingRefund(Guid submissionId, DateTimeOffset now) =>
+        ApplyTransaction(1, CreditDelta.Grant, CreditLedgerEntry.WritingRefundReason, now, submissionId, null, null);
+
+    private CreditLedgerEntry ApplyTransaction(int amount, CreditDelta deltaType, string reason, DateTimeOffset now,
+        Guid? referenceId, Guid? createdByAdminId, string? note)
+    {
         if (amount <= 0)
         {
             throw new DomainException("A credit transaction must carry a positive amount.");
@@ -62,6 +81,17 @@ public sealed class CreditAccount : Entity
 
         int signedDelta = deltaType == CreditDelta.Grant ? amount : -amount;
         long candidate = (long)Balance + signedDelta;
+        long reserved = ReservedRefundCapacity;
+        if (reason is CreditLedgerEntry.WritingChargeReason or CreditLedgerEntry.WritingRefundReason)
+        {
+            int expectedDelta = reason == CreditLedgerEntry.WritingChargeReason ? -1 : 1;
+            if (signedDelta != expectedDelta || referenceId is null || referenceId == Guid.Empty)
+            {
+                throw new DomainException("Writing movements require one credit and a submission reference.");
+            }
+            // A charge exchanges balance for refund headroom; its refund reverses that exchange.
+            reserved -= signedDelta;
+        }
 
         if (candidate < 0)
         {
@@ -69,15 +99,16 @@ public sealed class CreditAccount : Entity
                 $"A {reason} of {signedDelta} would leave a negative balance.");
         }
 
-        if (candidate > int.MaxValue)
+        if (reserved < 0)
+        {
+            throw new DomainException("No Writing refund capacity is reserved.");
+        }
+        if (candidate + reserved > int.MaxValue)
         {
             throw new DomainException("The resulting credit balance exceeds the supported range.");
         }
 
-        Balance = (int)candidate;
-        UpdatedAt = now;
-
-        return CreditLedgerEntry.Record(
+        var entry = CreditLedgerEntry.Record(
             UserId,
             signedDelta,
             reason,
@@ -85,5 +116,22 @@ public sealed class CreditAccount : Entity
             referenceId,
             createdByAdminId,
             note);
+        Balance = (int)candidate;
+        ReservedRefundCapacity = (int)reserved;
+        UpdatedAt = now;
+        return entry;
+    }
+
+    /// <summary>For successful settlement only. The caller must hold the account and submission locks
+    /// and verify the owner's outstanding obligation before releasing it in the same transaction.
+    /// The account-level count cannot establish which submission is unsettled.</summary>
+    internal void ReleaseWritingRefundCapacity(DateTimeOffset now)
+    {
+        if (ReservedRefundCapacity <= 0)
+        {
+            throw new DomainException("No Writing refund capacity is reserved.");
+        }
+        ReservedRefundCapacity--;
+        UpdatedAt = now;
     }
 }

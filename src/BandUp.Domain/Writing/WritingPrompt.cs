@@ -68,6 +68,10 @@ public sealed class WritingPrompt : Entity
         UpdatedAt = now;
     }
 
+    /// <summary>Eligibility for a new learner submission, including catalogs populated before publication bounds were enforced.</summary>
+    public bool IsEligibleForSubmission() =>
+        Status == WritingPromptStatus.Published && MinWords == WritingMinWords && MaxWords == WritingMaxWords;
+
     public void Publish(DateTimeOffset now)
     {
         if (Status != WritingPromptStatus.Draft && Status != WritingPromptStatus.Published)

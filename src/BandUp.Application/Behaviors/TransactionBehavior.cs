@@ -14,32 +14,40 @@ public sealed class TransactionBehavior<TRequest, TResponse>(
         RequestHandlerDelegate<TResponse> next)
     {
         await unitOfWork.BeginTransactionAsync(cancellationToken);
-        messageBuffer.Open();
-
+        Result<TResponse> result;
         try
         {
-            Result<TResponse> result = await next();
-
-            if (result.IsFailure)
+            messageBuffer.Open();
+            result = await next();
+            if (result.IsSuccess)
             {
-                messageBuffer.Discard();
-                await unitOfWork.RollbackTransactionAsync(cancellationToken);
-                return result;
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+                await unitOfWork.CommitTransactionAsync(cancellationToken);
             }
-
-            await unitOfWork.SaveChangesAsync(cancellationToken);
-            await unitOfWork.CommitTransactionAsync(cancellationToken);
-
-            // Only now is the change visible to a consumer, so deferred messages go out here.
-            await messageBuffer.FlushAsync(cancellationToken);
-
-            return result;
         }
-        catch
+        catch (Exception original)
         {
             messageBuffer.Discard();
-            await unitOfWork.RollbackTransactionAsync(cancellationToken);
+            try
+            {
+                await unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            }
+            catch (Exception cleanup)
+            {
+                original.Data["TransactionCleanup"] = cleanup;
+            }
             throw;
         }
+
+        if (result.IsFailure)
+        {
+            messageBuffer.Discard();
+            await unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            return result;
+        }
+
+        // Publication failures occur after the database has committed.
+        await messageBuffer.FlushAsync(cancellationToken);
+        return result;
     }
 }

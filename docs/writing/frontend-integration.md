@@ -1,6 +1,6 @@
 # Writing Task 2 frontend integration
 
-Backend Master approved these six API contracts in Card 1. Card 2 owns runtime endpoint delivery and Card 3 owns real AI evaluation. Use the examples below as mocks during Card 1. Runtime availability depends on delivery of the corresponding cards.
+Backend Master approved these six API contracts in Card 1. Card 2 implements all six endpoints. Card 3 owns real AI evaluation. See [operations](operations.md) for deployment and activation requirements.
 
 ## User flow
 
@@ -11,6 +11,8 @@ Sign in, choose an active, approved BandUp IELTS Academic Task 2 prompt, and wri
 All six endpoints require the browser-managed access cookie. For a separately configured frontend origin, use `credentials: 'include'`. The browser enforces the cookie's SameSite and Secure settings. For submission, send `Content-Type: application/json`, `X-Requested-With: bandup`, and a UUID in `Idempotency-Key`. GET requests need the access cookie and carry no request body. The GET routes are exempt from the CSRF header requirement.
 
 On `401 UNAUTHORIZED`, follow the existing shared refresh flow and retry the protected request once if refresh succeeds. A submission retry must reuse the original key and body. A CSRF failure returns `400 VALIDATION_ERROR`. See the [browser session contract](../auth-client-contract.md).
+
+The server setting `Features:WritingSubmissionEnabled` defaults to false. After authentication and CSRF checks, POST returns `404 NOT_FOUND` while disabled. The prompt picker and four owner-scoped reads remain available. Keep acceptance disabled until Card 3 is ready. Private responses carry `Cache-Control: no-store`.
 
 ## Approved endpoints and examples
 
@@ -206,10 +208,11 @@ Errors use `application/problem+json`. Use `code` for branching and `traceId` fo
 | 400 | `VALIDATION_ERROR` | Invalid submission input or CSRF failure. |
 | 401 | `UNAUTHORIZED` | Session is missing or invalid. |
 | 402 | `INSUFFICIENT_CREDIT` | Submission requires one credit and was not accepted. |
-| 404 | `NOT_FOUND` | Prompt unavailable, or submission ID unknown or non-owned on status, detail or result. |
+| 404 | `NOT_FOUND` | Acceptance disabled, prompt unavailable, or submission ID unknown or non-owned on status, detail or result. |
 | 409 | `IDEMPOTENCY_CONFLICT` | Accepted key replayed with a different payload. |
 | 409 | `EVALUATION_NOT_READY` | Result requested while Queued or Processing. |
 | 409 | `EVALUATION_FAILED` | Result requested after terminal failure. |
+| 413 | `VALIDATION_ERROR` | Submission body exceeds 64 KiB. |
 
 An insufficient-credit example follows.
 
@@ -247,4 +250,8 @@ These recommendations are non-binding. Back off between status polls and allow o
 - [ ] Preserve the draft if submission fails. After a timeout, reuse the same key and payload to recover the original receipt. After a known terminal failure, an intentional new evaluation uses a new key and costs one credit if accepted.
 - [ ] Show waiting or evaluating for Queued and Processing. On Succeeded follow `resultUrl` and show the estimated feedback. On Failed show the failure and refund from `creditRefunded`.
 - [ ] Keep the essay visible on a 402. Show that a credit is required before another submission can be accepted.
-- [ ] Test owner-only reads, empty pages, reopening historical prompts, refresh and safe replay, each lifecycle state, and each distinct 409 code against mocks.
+- [ ] Test owner-only reads, empty pages, reopening historical prompts, refresh and safe replay, each lifecycle state, and each distinct 409 code against the API.
+
+## Card 2 input limits for runtime integration
+
+The approved POST limit is 64 KiB (65,536 bytes) for the entire JSON body, including JSON escapes. The API returns 413 for a larger body, including streamed requests. The decoded essay may contain at most 8,000 Unicode scalar values and must contain 100–350 words inclusive. Invalid essay content, including malformed surrogate sequences and U+0000, returns 400. Count supplementary characters as one scalar. Preserve the original string when retrying.

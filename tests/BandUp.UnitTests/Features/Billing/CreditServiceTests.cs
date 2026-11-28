@@ -2,6 +2,7 @@ using BandUp.Application.Abstractions;
 using BandUp.Application.Common;
 using BandUp.Application.Features.Billing;
 using BandUp.Domain.Billing;
+using BandUp.Domain.Common;
 using BandUp.Application.Features.Billing.Admin;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -62,6 +63,72 @@ public sealed class CreditServiceTests
         balance.ShouldBe(7);
     }
 
+    [Theory]
+    [InlineData(CreditLedgerEntry.WritingChargeReason, CreditDelta.Charge)]
+    [InlineData(CreditLedgerEntry.WritingRefundReason, CreditDelta.Grant)]
+    public void GenericCreditPostingRejectsWritingMovements(string reason, CreditDelta direction)
+    {
+        var reference = Guid.NewGuid();
+        var account = CreditAccount.Open(Guid.NewGuid(), 1, Now);
+
+        Should.Throw<DomainException>(() =>
+            account.RecordTransaction(1, direction, reason, Now, reference));
+        account.Balance.ShouldBe(1);
+        account.ReservedRefundCapacity.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task WritingOperationsRequireAnAccountAndMatchingCharge()
+    {
+        CreditService service = new(_accounts, _ledger, _time);
+        Guid owner = Guid.NewGuid();
+        Guid reference = Guid.NewGuid();
+        var ct = CancellationToken.None;
+        await Should.ThrowAsync<InvalidOperationException>(() => service.ChargeWritingAsync(owner, reference, ct));
+        _accounts.Stored = CreditAccount.Open(owner, 1, Now);
+        (await service.RefundWritingAsync(owner, reference, ct)).IsFailure.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, reference, ct)).IsSuccess.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, reference, ct)).IsSuccess.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, Guid.NewGuid(), ct)).Error!.Type.ShouldBe(ErrorType.PaymentRequired);
+        _accounts.Stored.Balance.ShouldBe(0);
+        (await service.RefundWritingAsync(owner, reference, ct)).IsSuccess.ShouldBeTrue();
+        (await service.RefundWritingAsync(owner, reference, ct)).IsSuccess.ShouldBeTrue();
+        _accounts.Stored.Balance.ShouldBe(1);
+        _accounts.Stored = CreditAccount.Open(Guid.NewGuid(), 0, Now);
+        (await service.RefundWritingAsync(_accounts.Stored.UserId, reference, ct)).IsFailure.ShouldBeTrue();
+        _accounts.Stored.Balance.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ReservationsTrackOnlyNewMovementsAcrossMultipleReferences()
+    {
+        var owner = Guid.NewGuid();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var account = CreditAccount.Open(owner, 2, Now);
+        _accounts.Stored = account;
+        CreditService service = new(_accounts, _ledger, _time);
+        var ct = CancellationToken.None;
+        (await service.ChargeWritingAsync(owner, first, ct)).IsSuccess.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, second, ct)).IsSuccess.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, second, ct)).IsSuccess.ShouldBeTrue();
+        (await service.ChargeWritingAsync(owner, Guid.NewGuid(), ct)).Error!.Type.ShouldBe(ErrorType.PaymentRequired);
+        (await service.RefundWritingAsync(owner, Guid.NewGuid(), ct)).IsFailure.ShouldBeTrue();
+        account.ReservedRefundCapacity.ShouldBe(2);
+        account.Balance.ShouldBe(0);
+        (await service.RefundWritingAsync(owner, first, ct)).IsSuccess.ShouldBeTrue();
+        (await service.RefundWritingAsync(owner, first, ct)).IsSuccess.ShouldBeTrue();
+        account.ReservedRefundCapacity.ShouldBe(1);
+        account.Balance.ShouldBe(1);
+
+        // Matching ledger evidence alone cannot fund a refund on an account with no headroom reserved.
+        var inconsistent = CreditAccount.Open(owner, 1, Now);
+        _accounts.Stored = inconsistent;
+        (await service.RefundWritingAsync(owner, second, ct)).Error!.Type.ShouldBe(ErrorType.Conflict);
+        inconsistent.ReservedRefundCapacity.ShouldBe(0);
+        inconsistent.Balance.ShouldBe(1);
+    }
+
     private sealed class TestCreditAccountRepository : ICreditAccountRepository
     {
         public CreditAccount? AddedAccount { get; private set; }
@@ -73,6 +140,8 @@ public sealed class CreditServiceTests
             return Task.CompletedTask;
         }
 
+        public Task<CreditAccount?> LockAsync(Guid userId, CancellationToken ct) => FindByUserIdAsync(userId, ct);
+
         public Task<CreditAccount?> FindByUserIdAsync(Guid userId, CancellationToken ct) =>
             Task.FromResult(Stored is { } account && account.UserId == userId ? account : null);
 
@@ -81,9 +150,14 @@ public sealed class CreditServiceTests
 
     private sealed class TestLedgerRepository : ICreditLedgerRepository
     {
+        private readonly List<CreditLedgerEntry> _entries = [];
+        public Task<CreditLedgerEntry?> FindAsync(string reason, Guid referenceId, CancellationToken ct) =>
+            Task.FromResult(_entries.SingleOrDefault(entry => entry.Reason == reason && entry.ReferenceId == referenceId));
+
         public CreditLedgerEntry? AddedEntry { get; private set; }
         public Task AddAsync(CreditLedgerEntry entry, CancellationToken ct)
         {
+            _entries.Add(entry);
             AddedEntry = entry;
             return Task.CompletedTask;
         }

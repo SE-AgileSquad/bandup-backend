@@ -4,14 +4,16 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 
 namespace BandUp.Infrastructure.Messaging;
 
 /// <summary>
 /// Consumes a single queue with manual acknowledgements. A handler that keeps failing is
 /// retried in-process with backoff, then handed to the final-failure hook and acknowledged.
-/// A process crash never acknowledges, so the broker redelivers the message, and the
-/// handled-message record makes the redelivery a no-op.
+/// The Redis check/handle/mark sequence suppresses recorded redeliveries, but a crash between
+/// handling and marking can repeat effects across processes. Card 3 must enforce database-backed
+/// SubmissionId idempotency and processing fencing.
 /// </summary>
 public abstract class RabbitMqConsumerBase<TMessage>(
     RabbitMqConnectionProvider connections,
@@ -35,11 +37,37 @@ public abstract class RabbitMqConsumerBase<TMessage>(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await ConsumeUntilDisconnectedAsync(stoppingToken);
+                }
+                catch (Exception exception) when (!stoppingToken.IsCancellationRequested &&
+                    RabbitMqConnectionProvider.IsTransientFailure(exception))
+                {
+                    logger.LogWarning("RabbitMQ consumer on {QueueName} will reconnect ({FailureType})",
+                        QueueName, exception.GetType().Name);
+                }
+                await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
+            }
+        }
+        catch (Exception) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task ConsumeUntilDisconnectedAsync(CancellationToken stoppingToken)
+    {
         IConnection connection = await connections.GetConnectionAsync(stoppingToken);
 
         await topology.DeclareAsync(connection, stoppingToken);
 
-        IChannel channel = await connection.CreateChannelAsync(
+        using var generation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        using var delivery = new SemaphoreSlim(1);
+        await using IChannel channel = await connection.CreateChannelAsync(
             new CreateChannelOptions(
                 publisherConfirmationsEnabled: false,
                 publisherConfirmationTrackingEnabled: false,
@@ -53,24 +81,47 @@ public abstract class RabbitMqConsumerBase<TMessage>(
             cancellationToken: stoppingToken);
 
         AsyncEventingBasicConsumer consumer = new(channel);
-        consumer.ReceivedAsync += (_, args) => OnReceivedAsync(channel, args, stoppingToken);
-
-        await channel.BasicConsumeAsync(
-            QueueName,
-            autoAck: false,
-            consumer: consumer,
-            cancellationToken: stoppingToken);
+        var disconnected = new TaskCompletionSource<ShutdownEventArgs?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.ChannelShutdownAsync += (_, reason) =>
+        {
+            disconnected.TrySetResult(reason);
+            return Task.CompletedTask;
+        };
+        consumer.UnregisteredAsync += (_, _) =>
+        {
+            disconnected.TrySetResult(null);
+            return Task.CompletedTask;
+        };
+        var generationToken = generation.Token;
+        consumer.ReceivedAsync += (_, args) => OnReceivedAsync(channel, args, delivery, generationToken);
 
         try
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
-        }
-        catch (OperationCanceledException)
-        {
+            await channel.BasicConsumeAsync(
+                QueueName,
+                autoAck: false,
+                consumer: consumer,
+                cancellationToken: stoppingToken);
+
+            var shutdown = await disconnected.Task.WaitAsync(stoppingToken);
+            if (shutdown is not null)
+            {
+                throw new OperationInterruptedException(shutdown);
+            }
         }
         finally
         {
-            await channel.DisposeAsync();
+            // Broker callbacks only signal shutdown. Cancel and drain outside the dispatcher,
+            // before disposing the channel or registering a replacement consumer.
+            try
+            {
+                await generation.CancelAsync();
+            }
+            finally
+            {
+                await delivery.WaitAsync(CancellationToken.None);
+                delivery.Release();
+            }
         }
     }
 
@@ -97,19 +148,27 @@ public abstract class RabbitMqConsumerBase<TMessage>(
     private async Task OnReceivedAsync(
         IChannel channel,
         BasicDeliverEventArgs args,
+        SemaphoreSlim delivery,
         CancellationToken cancellationToken)
     {
         try
         {
-            await ProcessAsync(channel, args, cancellationToken);
+            await delivery.WaitAsync(cancellationToken);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await ProcessAsync(channel, args, cancellationToken);
+            }
+            finally
+            {
+                delivery.Release();
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Shutting down mid-delivery. The message is deliberately left unacknowledged so
-            // the broker redelivers it once this process is gone, and the exception is not
-            // allowed to escape: that would fault the channel on the way out.
+            // Leave an interrupted delivery unacknowledged for broker redelivery.
             logger.LogInformation(
-                "Shutdown during delivery {DeliveryTag} on {QueueName}; leaving it unacknowledged",
+                "Delivery interrupted for {DeliveryTag} on {QueueName}; leaving it unacknowledged",
                 args.DeliveryTag,
                 QueueName);
         }
@@ -147,10 +206,12 @@ public abstract class RabbitMqConsumerBase<TMessage>(
         }
 
         Exception? failure = await InvokeWithRetriesAsync(message, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (failure is not null)
         {
             await OnFinalFailureAsync(message, failure, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             await channel.BasicAckAsync(args.DeliveryTag, multiple: false, cancellationToken);
             return;
         }
@@ -198,6 +259,7 @@ public abstract class RabbitMqConsumerBase<TMessage>(
             }
             catch (Exception exception)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 logger.LogWarning(
                     exception,
                     "Attempt {Attempt} of {MaxAttempts} failed on {QueueName}",

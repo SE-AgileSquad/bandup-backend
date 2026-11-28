@@ -1,3 +1,4 @@
+using BandUp.Domain.Writing;
 using System.Text.Json.Serialization;
 
 namespace BandUp.Application.Features.Writing;
@@ -27,8 +28,6 @@ public sealed record WritingSubmissionHistoryItemDto(Guid SubmissionId, Guid Pro
     public string? ScoreLabel => EstimatedOverallBand.HasValue ? WritingFeedbackDto.EstimatedLabel : null;
 }
 
-public enum WritingEvaluationStatus { Queued, Processing, Succeeded, Failed }
-
 public sealed record WritingSubmissionAcceptedDto(Guid SubmissionId, DateTimeOffset SubmittedAt)
 {
     public WritingEvaluationStatus Status => WritingEvaluationStatus.Queued;
@@ -50,7 +49,7 @@ public sealed record WritingFeedbackDto(string Summary, WritingCriteriaDto Crite
 {
     public const string EstimatedLabel = "estimated";
 
-    public string SchemaVersion => "1.0";
+    public string SchemaVersion => WritingFeedback.Version;
     public string ScoreLabel => EstimatedLabel;
     public decimal EstimatedOverallBand => Criteria.EstimatedBand();
 }
@@ -58,21 +57,7 @@ public sealed record WritingFeedbackDto(string Summary, WritingCriteriaDto Crite
 public sealed record WritingCriteriaDto(WritingCriterionFeedbackDto Tr, WritingCriterionFeedbackDto Cc,
     WritingCriterionFeedbackDto Lr, WritingCriterionFeedbackDto Gra)
 {
-    public decimal EstimatedBand()
-    {
-        static decimal CheckedScore(decimal score, string criterion)
-        {
-            if (score is < 0m or > 9m || score % 0.5m != 0m)
-            {
-                throw new ArgumentOutOfRangeException(criterion, score, "Expected 0–9 in half-band increments.");
-            }
-            return score;
-        }
-
-        decimal mean = (CheckedScore(Tr.Score, nameof(Tr)) + CheckedScore(Cc.Score, nameof(Cc))
-            + CheckedScore(Lr.Score, nameof(Lr)) + CheckedScore(Gra.Score, nameof(Gra))) / 4m;
-        return Math.Round(mean * 2m, MidpointRounding.AwayFromZero) / 2m;
-    }
+    public decimal EstimatedBand() => BandScores.Overall(Tr.Score, Cc.Score, Lr.Score, Gra.Score);
 }
 
 public sealed record WritingCriterionFeedbackDto(decimal Score, string Explanation, IReadOnlyList<string> Strengths,

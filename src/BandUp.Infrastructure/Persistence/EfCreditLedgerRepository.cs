@@ -8,12 +8,21 @@ namespace BandUp.Infrastructure.Persistence;
 
 public sealed class EfCreditLedgerRepository(BandUpDbContext context) : ICreditLedgerRepository
 {
+    public async Task<CreditLedgerEntry?> FindAsync(string reason, Guid referenceId, CancellationToken cancellationToken)
+    {
+        var pending = context.ChangeTracker.Entries<CreditLedgerEntry>()
+            .Where(entry => entry.State == EntityState.Added)
+            .Select(entry => entry.Entity)
+            .SingleOrDefault(entry => entry.Reason == reason && entry.ReferenceId == referenceId);
+        return pending ?? await context.CreditLedger.AsNoTracking().SingleOrDefaultAsync(
+            entry => entry.Reason == reason && entry.ReferenceId == referenceId, cancellationToken);
+    }
+
     public Task AddAsync(CreditLedgerEntry entry, CancellationToken cancellationToken) =>
         context.CreditLedger.AddAsync(entry, cancellationToken).AsTask();
 
     public Task<CreditLedgerEntry?> FindAdminAdjustmentAsync(Guid requestId, CancellationToken cancellationToken) =>
-        context.CreditLedger.AsNoTracking().SingleOrDefaultAsync(entry =>
-            entry.Reason == CreditLedgerEntry.AdminAdjustReason && entry.ReferenceId == requestId, cancellationToken);
+        FindAsync(CreditLedgerEntry.AdminAdjustReason, requestId, cancellationToken);
 
     public Task<PagedResult<CreditHistoryItem>> ListForUserAsync(Guid userId, PageRequest page, CancellationToken cancellationToken) =>
         EfStoreOperations.ReadPageAsync(context.CreditLedger.AsNoTracking().Where(entry => entry.UserId == userId)

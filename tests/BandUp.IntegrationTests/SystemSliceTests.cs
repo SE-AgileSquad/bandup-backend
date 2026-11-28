@@ -20,7 +20,8 @@ public sealed class SystemSliceTests(BandUpTestEnvironment environment)
         TestLogSink workerLogs = new();
         TestLogSink apiLogs = new();
 
-        Dictionary<string, string?> settings = environment.SettingsFor(environment.MigratedConnectionString);
+        string database = await environment.CreateIsolatedMigratedDatabaseAsync(CancellationToken.None);
+        Dictionary<string, string?> settings = environment.SettingsFor(database);
 
         using IHost worker = WorkerHost.Build(
             [],
@@ -31,7 +32,8 @@ public sealed class SystemSliceTests(BandUpTestEnvironment environment)
 
         try
         {
-            await using BandUpApiFactory factory = new(environment, logSink: apiLogs);
+            await using BandUpApiFactory factory = new(environment, logSink: apiLogs,
+                overrides: new() { ["ConnectionStrings:Default"] = database });
             using HttpClient client = factory.CreateClient();
 
             HttpResponseMessage response = await client.PostAsJsonAsync(

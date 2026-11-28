@@ -15,4 +15,10 @@
     <ProjectReference Include="..\BandUp.Domain\BandUp.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="BandUp.Infrastructure" />
+    <InternalsVisibleTo Include="BandUp.UnitTests" />
+    <InternalsVisibleTo Include="BandUp.IntegrationTests" />
+  </ItemGroup>
+
 </Project>

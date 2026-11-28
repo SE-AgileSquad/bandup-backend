@@ -374,7 +374,8 @@ public sealed class PasswordRecoveryHttpTests(BandUpTestEnvironment environment)
     [Fact]
     public async Task AUTH_15_Worker_Starts_Without_The_Api_Recovery_Protection_Key()
     {
-        Dictionary<string, string?> settings = environment.SettingsFor(environment.MigratedConnectionString);
+        string database = await environment.CreateIsolatedMigratedDatabaseAsync(CancellationToken.None);
+        Dictionary<string, string?> settings = environment.SettingsFor(database);
         settings["PasswordReset:CodeProtectionKey"] = string.Empty;
         settings["OtpLogin:CodeProtectionKey"] = string.Empty;
         using IHost host = WorkerHost.Build([], configure: builder => builder.Configuration.AddInMemoryCollection(settings));

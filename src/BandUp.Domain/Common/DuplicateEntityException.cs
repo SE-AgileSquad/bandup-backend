@@ -5,4 +5,5 @@ namespace BandUp.Domain.Common;
 /// this is an *expected* concurrency outcome (a race between two identical writes), not a broken
 /// invariant — the API layer maps it to 409 instead of 500.
 /// </summary>
-public sealed class DuplicateEntityException(string message) : Exception(message);
+public sealed class DuplicateEntityException(string message, Exception? innerException = null)
+    : Exception(message, innerException);

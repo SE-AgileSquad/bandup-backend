@@ -1,4 +1,5 @@
 using BandUp.Application.Abstractions;
+using BandUp.Application.Features.Writing.SubmitWritingEssay;
 using BandUp.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -16,12 +17,26 @@ public sealed class EfUnitOfWork(BandUpDbContext context) : IUnitOfWork
         {
             return await context.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+        catch (Exception exception)
         {
-            // A unique index is the race backstop: two concurrent identical writes both pass
-            // the handler's existence check, and the second one loses here. The exception is
-            // translated so the API returns 409 instead of 500 (AUTH-02).
-            throw new DuplicateEntityException("A record with the same unique value already exists.");
+            await AbandonAfterFailureAsync(exception);
+            // Only a save-time violation after successful transaction disposal is safe to recover.
+            if (!exception.Data.Contains("TransactionCleanup") &&
+                exception is DbUpdateException { InnerException: PostgresException
+                {
+                    SqlState: PostgresErrorCodes.UniqueViolation,
+                    SchemaName: "writing",
+                    TableName: "writing_submissions",
+                    ConstraintName: "ix_writing_submissions_user_id_idempotency_key"
+                } })
+            {
+                throw new WritingSubmissionKeyConflictException(exception);
+            }
+            if (exception is DbUpdateException update && IsUniqueViolation(update))
+            {
+                throw new DuplicateEntityException("A record with the same unique value already exists.", update);
+            }
+            throw;
         }
     }
 
@@ -44,11 +59,15 @@ public sealed class EfUnitOfWork(BandUpDbContext context) : IUnitOfWork
         {
             await _transaction.CommitAsync(cancellationToken);
         }
-        finally
+        catch (Exception exception)
         {
-            await _transaction.DisposeAsync();
-            _transaction = null;
+            await AbandonAfterFailureAsync(exception);
+            throw;
         }
+
+        var committed = _transaction;
+        _transaction = null;
+        await committed.DisposeAsync();
     }
 
     public async Task RollbackTransactionAsync(CancellationToken cancellationToken)
@@ -58,14 +77,22 @@ public sealed class EfUnitOfWork(BandUpDbContext context) : IUnitOfWork
             return;
         }
 
+        // The scoped context owns its connection and current transaction. Disposal rolls back
+        // uncommitted PostgreSQL work and retires tracked entities, even after a successful flush.
+        _transaction = null;
+        await context.DisposeAsync();
+    }
+
+    private async Task AbandonAfterFailureAsync(Exception original)
+    {
         try
         {
-            await _transaction.RollbackAsync(cancellationToken);
-        }
-        finally
-        {
-            await _transaction.DisposeAsync();
             _transaction = null;
+            await context.DisposeAsync();
+        }
+        catch (Exception cleanup)
+        {
+            original.Data["TransactionCleanup"] = cleanup;
         }
     }
 }

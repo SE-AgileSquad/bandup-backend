@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="../WritingRefundPostingProbe.cs" />
   </ItemGroup>
 
   <ItemGroup>

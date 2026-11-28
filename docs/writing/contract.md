@@ -1,6 +1,6 @@
 # Writing API contract v1
 
-The Frontend team and Backend Master can mock these HTTP exchanges before the submission API and Worker ship. Use the existing authenticated cookie session and CSRF header. Send JSON with camelCase keys and UTC timestamps. Render every score and all feedback under a visible “Estimated Task 2 feedback” label. Render feedback strings as plain text.
+Card 2 implements all six endpoints. See the [frontend guide](frontend-integration.md) for HTTP examples and [operations](operations.md) for deployment, billing and recovery. Use the existing authenticated cookie session and CSRF header. Send JSON with camelCase keys and UTC timestamps. Render every score and all feedback under a visible “Estimated Task 2 feedback” label. Render feedback strings as plain text.
 
 ## Submission and polling
 
@@ -20,7 +20,7 @@ GET /api/writing/submissions/{submissionId} returns 200 with submissionId, statu
 
 GET /api/writing/submissions/{submissionId}/result returns the [successful result](examples/result.json). All submission reads are owner-only. Status, detail and result return the same 404 with NOT_FOUND for both unknown and non-owned IDs. The history list and total include only the authenticated user's submissions.
 
-Errors use the shared ProblemDetails envelope with uppercase code and lowercase kebab-case type URI. Invalid input or key returns 400. An inactive or missing prompt returns 404. Authentication and CSRF use existing middleware.
+Errors use the shared ProblemDetails envelope with uppercase code and lowercase kebab-case type URI. Invalid input or key returns 400. An inactive or missing prompt returns 404. Authentication and CSRF use existing middleware. Responses use `Cache-Control: no-store`. The POST returns 413 `VALIDATION_ERROR` when the entire JSON body exceeds 64 KiB (65,536 bytes), including JSON escapes and streamed bodies. After authentication and CSRF checks, disabled acceptance returns 404 `NOT_FOUND`. The five GET endpoints remain available under normal authorization.
 
 | Condition | HTTP | ProblemDetails code |
 |---|---:|---|
@@ -39,9 +39,9 @@ Example application/problem+json for HTTP 402.
 
 ## Lifecycle for Cards 2 and 3
 
-Queued starts when the essay and one charge commit together. Publish follows commit. A bounded recovery job must revisit unclaimed Queued submissions, including process crashes between commit and publish. Persist an acceptance deadline and retry schedule. Retry publishing with backoff up to a configured attempt/time budget. At expiry atomically transition a still-Queued submission to Failed and refund once. A late delivery can only claim a still-Queued eligible row. Processing starts on claim. Recover stale claims within a bounded budget. Retry transient failures in Processing, then atomically persist valid feedback and Succeeded, or refund and mark Failed. Retry an interrupted terminal transaction until reconciled. Conditional transitions and the unique ledger reference protect concurrent recovery and redelivery. Neither terminal state reopens. Handle stale/repeated deliveries idempotently. Cards 2 and 3 own runtime configuration and tests.
+Card 2 commits the essay, immutable prompt snapshot, charge and refund reservation together. The Worker publishes after commit and expires still-Queued submissions at their deadline with an atomic refund. Processing starts on claim and terminal states do not reopen. See [operations](operations.md) for the implemented retry and lease rules.
 
-Card 2 must bound body bytes and essay characters before expensive processing, safely reject malformed Unicode before normalization, and enforce owner-only queries and state-dependent fields. Charge and save atomically. Protect the balance against concurrent submissions with different keys. Keep the accepted receipt replayable even if publishing fails. Save the selected prompt snapshot in that same transaction.
+Card 3 owns the evaluation consumer, real LLM integration, cancellation, bounded execution, Processing recovery, business idempotency and fenced processing attempts. Keep `Features:WritingSubmissionEnabled` false until Card 3 is ready.
 
 Card 3 must parse bounded model responses in .NET with size and depth limits, reject duplicate properties and validate Draft 2020-12 using the same schema files with offline reference resolution. Validate score tokens by exact numeric value before conversion to a bounded numeric type. Reject unsupported exponents and out-of-set values, including 1e-9999999 and values arbitrarily close to a half band. Run Python/.NET parity fixtures for valid and invalid payloads. Use ordinal evidence matching. Run validation in the Worker process without spawning Python. Fence stale workers with claim ownership or version checks on success, failure and refund. Commit results and transitions atomically, make refunds idempotent, and reconcile interrupted processing within the recovery budget.
 

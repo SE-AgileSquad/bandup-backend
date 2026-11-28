@@ -4,4 +4,10 @@
     <RootNamespace>BandUp.Domain</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="BandUp.Application" />
+    <InternalsVisibleTo Include="BandUp.UnitTests" />
+    <InternalsVisibleTo Include="BandUp.IntegrationTests" />
+  </ItemGroup>
+
 </Project>
