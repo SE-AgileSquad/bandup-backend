@@ -138,6 +138,22 @@ public sealed class BandUpTestEnvironment : IAsyncLifetime
         return new BandUpDbContext(options);
     }
 
+    /// <summary>Isolates real Worker tests from Writing rows left by other integration tests.</summary>
+    public async Task<string> CreateIsolatedMigratedDatabaseAsync(CancellationToken cancellationToken)
+    {
+        var database = $"bandup_worker_{Guid.NewGuid():N}";
+        await using (var admin = new NpgsqlConnection(MigratedConnectionString))
+        {
+            await admin.OpenAsync(cancellationToken);
+            await using var create = new NpgsqlCommand($"CREATE DATABASE {database}", admin);
+            await create.ExecuteNonQueryAsync(cancellationToken);
+        }
+        var connectionString = new NpgsqlConnectionStringBuilder(MigratedConnectionString) { Database = database }.ConnectionString;
+        await using var context = CreateContext(connectionString);
+        await context.Database.MigrateAsync(cancellationToken);
+        return connectionString;
+    }
+
     private static async Task ExecuteAsync(NpgsqlConnection connection, string sql)
     {
         await using NpgsqlCommand command = connection.CreateCommand();
