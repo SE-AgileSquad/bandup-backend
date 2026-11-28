@@ -108,7 +108,7 @@ services:
   frontend:
     image: ${FRONTEND_IMAGE:-bandup-frontend:local}
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
       interval: 10s
       timeout: 3s
       retries: 6
